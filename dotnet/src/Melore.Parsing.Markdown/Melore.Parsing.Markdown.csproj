@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Melore.Core\Melore.Core.csproj" />
+  </ItemGroup>
+</Project>

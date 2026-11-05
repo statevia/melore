@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Melore.Cli/Melore.Cli.csproj" />
+    <Project Path="src/Melore.Contracts/Melore.Contracts.csproj" />
+    <Project Path="src/Melore.Core/Melore.Core.csproj" />
+    <Project Path="src/Melore.Host/Melore.Host.csproj" />
+    <Project Path="src/Melore.Infrastructure/Melore.Infrastructure.csproj" />
+    <Project Path="src/Melore.Mcp/Melore.Mcp.csproj" />
+    <Project Path="src/Melore.Parsing.Markdown/Melore.Parsing.Markdown.csproj" />
+    <Project Path="src/Melore.Parsing.Roslyn/Melore.Parsing.Roslyn.csproj" />
+    <Project Path="src/Melore.Providers.Ollama/Melore.Providers.Ollama.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Melore.Tests/Melore.Tests.csproj" />
+  </Folder>
+</Solution>

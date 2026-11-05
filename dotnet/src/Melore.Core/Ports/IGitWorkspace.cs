@@ -1,0 +1,20 @@
+using Melore.Core.Models;
+
+namespace Melore.Core.Ports;
+
+/// <summary>
+/// 対象 Git リポジトリの列挙とリビジョン取得。
+/// </summary>
+public interface IGitWorkspace
+{
+    /// <summary>HEAD の SHA。Git でない場合は null。</summary>
+    Task<string?> GetHeadRevisionAsync(CancellationToken cancellationToken);
+
+    /// <summary>include/exclude 適用後の対象ファイル。</summary>
+    Task<IReadOnlyList<RepositoryFile>> ListFilesAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// <paramref name="fromRevision"/> から HEAD までのリネーム。from が空なら空集合。
+    /// </summary>
+    Task<IReadOnlyList<GitRename>> ListRenamesAsync(string? fromRevision, CancellationToken cancellationToken);
+}
