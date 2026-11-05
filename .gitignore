@@ -1,0 +1,14 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.suo
+artifacts/
+*.db
+*.db-shm
+*.db-wal
+melore.json
+.env
+.env.*
+!.env.example

@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "melore": {
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "${workspaceFolder}/dotnet/src/Melore.Mcp/Melore.Mcp.csproj",
+        "--",
+        "--config",
+        "${workspaceFolder}/melore.json"
+      ],
+      "cwd": "${workspaceFolder}/dotnet"
+    }
+  }
+}

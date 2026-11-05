@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Melore.Mcp</RootNamespace>
+    <AssemblyName>melore-mcp</AssemblyName>
+    <PublishDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\artifacts\melore-mcp'))</PublishDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Melore.Host\Melore.Host.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+</Project>

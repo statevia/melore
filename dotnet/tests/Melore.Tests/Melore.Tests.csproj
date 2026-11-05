@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Melore.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Melore.Contracts\Melore.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Melore.Core\Melore.Core.csproj" />
+    <ProjectReference Include="..\..\src\Melore.Infrastructure\Melore.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Melore.Parsing.Markdown\Melore.Parsing.Markdown.csproj" />
+    <ProjectReference Include="..\..\src\Melore.Parsing.Roslyn\Melore.Parsing.Roslyn.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

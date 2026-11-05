@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Melore.Cli</RootNamespace>
+    <AssemblyName>melore</AssemblyName>
+    <PublishDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\artifacts\melore'))</PublishDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Melore.Contracts\Melore.Contracts.csproj" />
+    <ProjectReference Include="..\Melore.Host\Melore.Host.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
+  </ItemGroup>
+</Project>

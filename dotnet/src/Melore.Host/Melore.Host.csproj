@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Melore.Contracts\Melore.Contracts.csproj" />
+    <ProjectReference Include="..\Melore.Core\Melore.Core.csproj" />
+    <ProjectReference Include="..\Melore.Infrastructure\Melore.Infrastructure.csproj" />
+    <ProjectReference Include="..\Melore.Parsing.Markdown\Melore.Parsing.Markdown.csproj" />
+    <ProjectReference Include="..\Melore.Parsing.Roslyn\Melore.Parsing.Roslyn.csproj" />
+    <ProjectReference Include="..\Melore.Providers.Ollama\Melore.Providers.Ollama.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+</Project>

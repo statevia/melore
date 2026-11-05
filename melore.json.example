@@ -1,0 +1,24 @@
+{
+  "repositoryName": "statevia",
+  "repositoryPath": "/absolute/path/to/statevia",
+  "include": [
+    "docs/**/*.md",
+    "dotnet/**/*.cs"
+  ],
+  "exclude": [
+    "**/bin/**",
+    "**/obj/**",
+    "artifacts/**",
+    ".local/**",
+    "nodejs/**/node_modules/**",
+    "**/.env",
+    "**/.env.*"
+  ],
+  "solutionPath": "dotnet/statevia.sln",
+  "databasePath": null,
+  "ollama": {
+    "endpoint": "http://localhost:11434",
+    "embeddingModel": "qwen3-embedding:0.6b",
+    "chatModel": "qwen3.5:9b-q4_K_M"
+  }
+}
