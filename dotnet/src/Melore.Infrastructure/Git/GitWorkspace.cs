@@ -15,6 +15,8 @@ namespace Melore.Infrastructure.Git;
 /// <param name="settings">対象リポジトリ設定。</param>
 public sealed class GitWorkspace(MeloreSettings settings) : IGitWorkspace
 {
+    private readonly string? _gitPath = GitExecutableLocator.Find();
+
     /// <inheritdoc />
     public async Task<string?> GetHeadRevisionAsync(CancellationToken cancellationToken)
     {
@@ -126,16 +128,9 @@ public sealed class GitWorkspace(MeloreSettings settings) : IGitWorkspace
             return [];
         }
 
-        var list = new List<WorktreeChange>();
-        foreach (var change in GitStatusParser.Parse(stdout))
-        {
-            if (IsIncluded(change.RelativePath))
-            {
-                list.Add(change);
-            }
-        }
-
-        return list;
+        return GitStatusParser.Parse(stdout)
+            .Where(change => IsIncluded(change.RelativePath))
+            .ToList();
     }
 
     /// <inheritdoc />
@@ -195,7 +190,7 @@ public sealed class GitWorkspace(MeloreSettings settings) : IGitWorkspace
         => CreateMatcher().Match(relativePath.Replace('\\', '/')).HasMatches;
 
     private async Task<Dictionary<string, string>> HashWorkingTreeAsync(
-        IReadOnlyList<string> relativePaths,
+        List<string> relativePaths,
         CancellationToken cancellationToken)
     {
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -235,13 +230,18 @@ public sealed class GitWorkspace(MeloreSettings settings) : IGitWorkspace
         string? stdin,
         CancellationToken cancellationToken)
     {
+        if (_gitPath is null)
+        {
+            return (1, "", "git was not found");
+        }
+
         var start = new ProcessStartInfo
         {
-            FileName = "git",
+            FileName = _gitPath,
             WorkingDirectory = settings.RepositoryPath,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            RedirectStandardInput = stdin is not null,
+            RedirectStandardInput = true,
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
             UseShellExecute = false,
@@ -262,11 +262,13 @@ public sealed class GitWorkspace(MeloreSettings settings) : IGitWorkspace
 
         var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
         var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+        // MCP サーバーの stdin はプロトコル専用。git へ継承させると、読み取り中の同期パイプで止まることがある。
         if (stdin is not null)
         {
             await process.StandardInput.WriteAsync(stdin.AsMemory(), cancellationToken).ConfigureAwait(false);
-            process.StandardInput.Close();
         }
+
+        process.StandardInput.Close();
 
         var stdout = await stdoutTask.ConfigureAwait(false);
         var stderr = await stderrTask.ConfigureAwait(false);

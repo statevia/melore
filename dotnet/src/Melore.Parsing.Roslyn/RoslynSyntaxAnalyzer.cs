@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Melore.Core.Models;
 using Melore.Core.Ports;
 using Microsoft.CodeAnalysis;
@@ -12,6 +11,19 @@ namespace Melore.Parsing.Roslyn;
 /// </summary>
 public sealed class RoslynSyntaxAnalyzer : ICodeAnalyzer
 {
+    /// <summary>シンボルの名前まわりの情報。</summary>
+    /// <param name="Kind">シンボルの種別。</param>
+    /// <param name="Fqn">完全修飾名。</param>
+    /// <param name="Name">短い名前。</param>
+    /// <param name="Containing">所属する型の FQN。</param>
+    /// <param name="Signature">シグネチャ。無ければ null。</param>
+    private readonly record struct SymbolHead(
+        string Kind,
+        string Fqn,
+        string Name,
+        string? Containing,
+        string? Signature);
+
     /// <inheritdoc />
     public string AnalyzerVersion => "roslyn-syntax:3";
 
@@ -53,15 +65,9 @@ public sealed class RoslynSyntaxAnalyzer : ICodeAnalyzer
                 };
                 var typeFqn = Qualify(namespaceName, containingType, type.Identifier.Text);
                 symbols.Add(Create(
-                    typeKind,
-                    typeFqn,
-                    type.Identifier.Text,
-                    containingType,
-                    signature: null,
+                    new SymbolHead(typeKind, typeFqn, type.Identifier.Text, containingType, Signature: null),
                     type,
-                    isTest: false,
-                    testFramework: null,
-                    BaseTypes(type)));
+                    baseTypeNames: BaseTypes(type)));
                 foreach (var member in type.Members)
                 {
                     Walk(member, namespaceName, typeFqn, symbols);
@@ -71,66 +77,50 @@ public sealed class RoslynSyntaxAnalyzer : ICodeAnalyzer
             case EnumDeclarationSyntax enumDecl:
                 var enumFqn = Qualify(namespaceName, containingType, enumDecl.Identifier.Text);
                 symbols.Add(Create(
-                    "enum",
-                    enumFqn,
-                    enumDecl.Identifier.Text,
-                    containingType,
-                    null,
-                    enumDecl,
-                    false,
-                    null,
-                    []));
-                foreach (var member in enumDecl.Members)
-                {
-                    symbols.Add(Create(
+                    new SymbolHead("enum", enumFqn, enumDecl.Identifier.Text, containingType, Signature: null),
+                    enumDecl));
+                symbols.AddRange(enumDecl.Members.Select(member => Create(
+                    new SymbolHead(
                         "enum_member",
                         enumFqn + "." + member.Identifier.Text,
                         member.Identifier.Text,
                         enumFqn,
-                        null,
-                        member,
-                        false,
-                        null,
-                        []));
-                }
+                        Signature: null),
+                    member)));
 
                 return;
             case MethodDeclarationSyntax method:
                 var (isTest, framework) = DetectTest(method);
                 symbols.Add(Create(
-                    "method",
-                    Qualify(namespaceName, containingType, method.Identifier.Text) + method.ParameterList.ToString(),
-                    method.Identifier.Text,
-                    containingType,
-                    method.Identifier.Text + method.ParameterList,
+                    new SymbolHead(
+                        "method",
+                        Qualify(namespaceName, containingType, method.Identifier.Text) + method.ParameterList.ToString(),
+                        method.Identifier.Text,
+                        containingType,
+                        method.Identifier.Text + method.ParameterList),
                     method,
                     isTest,
-                    framework,
-                    []));
+                    framework));
                 return;
             case PropertyDeclarationSyntax property:
                 symbols.Add(Create(
-                    "property",
-                    Qualify(namespaceName, containingType, property.Identifier.Text),
-                    property.Identifier.Text,
-                    containingType,
-                    property.Type + " " + property.Identifier.Text,
-                    property,
-                    false,
-                    null,
-                    []));
+                    new SymbolHead(
+                        "property",
+                        Qualify(namespaceName, containingType, property.Identifier.Text),
+                        property.Identifier.Text,
+                        containingType,
+                        property.Type + " " + property.Identifier.Text),
+                    property));
                 return;
             case EventDeclarationSyntax evt:
                 symbols.Add(Create(
-                    "event",
-                    Qualify(namespaceName, containingType, evt.Identifier.Text),
-                    evt.Identifier.Text,
-                    containingType,
-                    null,
-                    evt,
-                    false,
-                    null,
-                    []));
+                    new SymbolHead(
+                        "event",
+                        Qualify(namespaceName, containingType, evt.Identifier.Text),
+                        evt.Identifier.Text,
+                        containingType,
+                        Signature: null),
+                    evt));
                 return;
         }
 
@@ -141,33 +131,29 @@ public sealed class RoslynSyntaxAnalyzer : ICodeAnalyzer
     }
 
     private static ParsedSymbol Create(
-        string kind,
-        string fqn,
-        string name,
-        string? containing,
-        string? signature,
+        SymbolHead head,
         SyntaxNode node,
-        bool isTest,
-        string? testFramework,
-        IReadOnlyList<string> baseTypeNames)
+        bool isTest = false,
+        string? testFramework = null,
+        IReadOnlyList<string>? baseTypeNames = null)
     {
         var span = node.GetLocation().GetLineSpan();
         return new ParsedSymbol(
-            kind,
-            fqn,
-            name,
-            containing,
-            signature,
+            head.Kind,
+            head.Fqn,
+            head.Name,
+            head.Containing,
+            head.Signature,
             AccessibilityOf(node),
             span.StartLinePosition.Line + 1,
             span.EndLinePosition.Line + 1,
             SummaryAndRemarks(node),
             isTest,
             testFramework,
-            baseTypeNames);
+            baseTypeNames ?? []);
     }
 
-    private static IReadOnlyList<string> BaseTypes(TypeDeclarationSyntax type)
+    private static List<string> BaseTypes(TypeDeclarationSyntax type)
     {
         if (type.BaseList is null)
         {
@@ -240,7 +226,7 @@ public sealed class RoslynSyntaxAnalyzer : ICodeAnalyzer
                 continue;
             }
 
-            var text = Regex.Replace(element.Content.ToString(), @"\s+", " ").Trim();
+            var text = string.Join(' ', element.Content.ToString().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
             if (text.Length > 0)
             {
                 parts.Add(text);

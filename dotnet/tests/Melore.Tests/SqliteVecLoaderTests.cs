@@ -14,9 +14,9 @@ public sealed class SqliteVecLoaderTests
         connection.Open();
 
         // Act
-        var loaded = SqliteVecLoader.TryLoad(connection);
+        var exception = Record.Exception(() => SqliteVecLoader.TryLoad(connection));
 
         // Assert
-        _ = loaded;
+        Assert.Null(exception);
     }
 }

@@ -95,7 +95,7 @@ Statevia 側の方針追加は済み。Melore 側では次を行う。
 ### P2-1 出力の正しさとコスト
 
 - 文書末尾のチャンクの `endLine` のずれを直す（行範囲がファイル行数以下であることをテストで固定する）。
-- MCP の JSON 出力で `JavaScriptEncoder.UnsafeRelaxedJsonEscaping` を使い、日本語を escape しない。
+- MCP のツール結果の本文で `JavaScriptEncoder.UnsafeRelaxedJsonEscaping` を使い、日本語を escape しない。プロトコルの封筒は SDK の既定のままで、受信側が JSON を解くと本文の文字列に戻る。
 - `explain` の evidence から body を外し、ID・パス・行範囲・snippet だけにする。
 - 受け入れ: 検証用 28 件の全ヒットで行範囲がファイル内。`search` の平均応答文字数が 3 割以上減る。
 

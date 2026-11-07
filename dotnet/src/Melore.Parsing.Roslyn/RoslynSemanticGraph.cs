@@ -44,62 +44,50 @@ public sealed class RoslynSemanticGraph : ISemanticGraphExtractor
     /// コンパイル結果から解決済みの辺を集める。ソースに宣言が無い相手は捨てる。
     /// </summary>
     public static IReadOnlyList<SemanticRelation> FromCompilation(Compilation compilation)
+        => compilation.SyntaxTrees
+            .SelectMany(tree =>
+            {
+                var model = compilation.GetSemanticModel(tree);
+                var root = tree.GetRoot();
+                return Implements(model, root).Concat(Calls(model, root));
+            })
+            .DistinctBy(edge => edge.FromFqn + "\t" + edge.ToFqn + "\t" + edge.RelType)
+            .ToList();
+
+    private static IEnumerable<SemanticRelation> Implements(SemanticModel model, SyntaxNode root)
+        => root.DescendantNodes()
+            .OfType<TypeDeclarationSyntax>()
+            .Select(syntax => model.GetDeclaredSymbol(syntax))
+            .OfType<INamedTypeSymbol>()
+            .SelectMany(type => Fqn(type) is { } from
+                ? type.Interfaces
+                    .Select(Fqn)
+                    .OfType<string>()
+                    .Select(to => new SemanticRelation(from, to, "implements"))
+                : []);
+
+    private static IEnumerable<SemanticRelation> Calls(SemanticModel model, SyntaxNode root)
+        => root.DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Select(invocation => ToCall(model, invocation))
+            .OfType<SemanticRelation>();
+
+    /// <summary>
+    /// メソッド本体の中の呼び出しを辺にする。解決できない呼び出しと自己呼び出しは null。
+    /// </summary>
+    private static SemanticRelation? ToCall(SemanticModel model, InvocationExpressionSyntax invocation)
     {
-        var edges = new List<SemanticRelation>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var tree in compilation.SyntaxTrees)
+        if (model.GetSymbolInfo(invocation).Symbol is not IMethodSymbol target ||
+            model.GetEnclosingSymbol(invocation.SpanStart) is not IMethodSymbol caller)
         {
-            var model = compilation.GetSemanticModel(tree);
-            var root = tree.GetRoot();
-            foreach (var typeSyntax in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
-            {
-                if (model.GetDeclaredSymbol(typeSyntax) is not INamedTypeSymbol type)
-                {
-                    continue;
-                }
-
-                var from = Fqn(type);
-                if (from is null)
-                {
-                    continue;
-                }
-
-                foreach (var iface in type.Interfaces)
-                {
-                    var to = Fqn(iface);
-                    if (to is null)
-                    {
-                        continue;
-                    }
-
-                    Add(edges, seen, new SemanticRelation(from, to, "implements"));
-                }
-            }
-
-            foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
-            {
-                if (model.GetSymbolInfo(invocation).Symbol is not IMethodSymbol target)
-                {
-                    continue;
-                }
-
-                if (model.GetEnclosingSymbol(invocation.SpanStart) is not IMethodSymbol caller)
-                {
-                    continue;
-                }
-
-                var from = Fqn(caller);
-                var to = Fqn(target);
-                if (from is null || to is null || string.Equals(from, to, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                Add(edges, seen, new SemanticRelation(from, to, "calls"));
-            }
+            return null;
         }
 
-        return edges;
+        var from = Fqn(caller);
+        var to = Fqn(target);
+        return from is null || to is null || string.Equals(from, to, StringComparison.Ordinal)
+            ? null
+            : new SemanticRelation(from, to, "calls");
     }
 
     private static void EnsureMsBuild()
@@ -107,14 +95,6 @@ public sealed class RoslynSemanticGraph : ISemanticGraphExtractor
         if (Interlocked.Exchange(ref _msbuildRegistered, 1) == 0)
         {
             MSBuildLocator.RegisterDefaults();
-        }
-    }
-
-    private static void Add(List<SemanticRelation> edges, HashSet<string> seen, SemanticRelation edge)
-    {
-        if (seen.Add(edge.FromFqn + "\t" + edge.ToFqn + "\t" + edge.RelType))
-        {
-            edges.Add(edge);
         }
     }
 

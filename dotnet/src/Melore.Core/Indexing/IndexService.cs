@@ -51,49 +51,10 @@ public sealed class IndexService(
         var currentByPath = files.ToDictionary(f => f.RelativePath, StringComparer.OrdinalIgnoreCase);
         var currentPaths = currentByPath.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var rename in await git.ListRenamesAsync(store.GetStatus(settings.RepositoryName).IndexedRevision, cancellationToken)
-                     .ConfigureAwait(false))
-        {
-            if (!previous.TryGetValue(rename.FromPath, out var oldSha) ||
-                !currentByPath.TryGetValue(rename.ToPath, out var next) ||
-                !string.Equals(oldSha, next.BlobSha, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (store.RelocateFile(rename.FromPath, rename.ToPath, next.BlobSha))
-            {
-                previous.Remove(rename.FromPath);
-                previous[rename.ToPath] = next.BlobSha;
-                logger.LogInformation("Renamed {From} -> {To}", rename.FromPath, rename.ToPath);
-            }
-        }
-
-        var deleted = 0;
-        foreach (var path in previous.Keys)
-        {
-            if (!currentPaths.Contains(path))
-            {
-                store.DeleteFile(path);
-                deleted++;
-            }
-        }
-
-        var parsed = 0;
-        var skipped = 0;
-        foreach (var file in files)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (previous.TryGetValue(file.RelativePath, out var sha) &&
-                string.Equals(sha, file.BlobSha, StringComparison.Ordinal))
-            {
-                skipped++;
-                continue;
-            }
-
-            await IndexFileAsync(file, revision, cancellationToken).ConfigureAwait(false);
-            parsed++;
-        }
+        await ApplyRenamesAsync(settings, previous, currentByPath, cancellationToken).ConfigureAwait(false);
+        var deleted = DeleteMissing(previous, currentPaths);
+        var (parsed, skipped) = await IndexChangedAsync(files, previous, revision, cancellationToken)
+            .ConfigureAwait(false);
 
         var related = RelationshipIndexer.Rebuild(store);
         await ApplySemanticGraphAsync(settings, cancellationToken).ConfigureAwait(false);
@@ -112,6 +73,66 @@ public sealed class IndexService(
             analyzerChanged,
             revision);
         return store.GetStatus(settings.RepositoryName);
+    }
+
+    /// <summary>
+    /// blob が同じリネームは解析し直さず、既存の行を新しいパスへ移す。
+    /// </summary>
+    private async Task ApplyRenamesAsync(
+        MeloreSettings settings,
+        Dictionary<string, string> previous,
+        Dictionary<string, RepositoryFile> currentByPath,
+        CancellationToken cancellationToken)
+    {
+        foreach (var rename in await git.ListRenamesAsync(store.GetStatus(settings.RepositoryName).IndexedRevision, cancellationToken)
+                     .ConfigureAwait(false))
+        {
+            if (!previous.TryGetValue(rename.FromPath, out var oldSha) ||
+                !currentByPath.TryGetValue(rename.ToPath, out var next) ||
+                !string.Equals(oldSha, next.BlobSha, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (store.RelocateFile(rename.FromPath, rename.ToPath, next.BlobSha))
+            {
+                previous.Remove(rename.FromPath);
+                previous[rename.ToPath] = next.BlobSha;
+                logger.LogInformation("Renamed {From} -> {To}", rename.FromPath, rename.ToPath);
+            }
+        }
+    }
+
+    private int DeleteMissing(Dictionary<string, string> previous, HashSet<string> currentPaths)
+    {
+        var missing = previous.Keys.Where(path => !currentPaths.Contains(path)).ToList();
+        missing.ForEach(store.DeleteFile);
+        return missing.Count;
+    }
+
+    private async Task<(int Parsed, int Skipped)> IndexChangedAsync(
+        IReadOnlyList<RepositoryFile> files,
+        Dictionary<string, string> previous,
+        string? revision,
+        CancellationToken cancellationToken)
+    {
+        var parsed = 0;
+        var skipped = 0;
+        foreach (var file in files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (previous.TryGetValue(file.RelativePath, out var sha) &&
+                string.Equals(sha, file.BlobSha, StringComparison.Ordinal))
+            {
+                skipped++;
+                continue;
+            }
+
+            await IndexFileAsync(file, revision, cancellationToken).ConfigureAwait(false);
+            parsed++;
+        }
+
+        return (parsed, skipped);
     }
 
     /// <summary>
@@ -228,7 +249,7 @@ public sealed class IndexService(
                 continue;
             }
 
-            store.AddRelationship(
+            store.AddRelationship(new RelationshipEntry(
                 "symbol",
                 fromId,
                 "symbol",
@@ -236,7 +257,7 @@ public sealed class IndexService(
                 edge.RelType,
                 RelationshipBasis.Explicit,
                 1.0,
-                edge.ToFqn);
+                edge.ToFqn));
         }
     }
 

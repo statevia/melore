@@ -12,52 +12,20 @@ public sealed class MarkdownDocumentParser : IDocumentParser
     /// <inheritdoc />
     public string AnalyzerVersion => "markdown:1";
 
-    private static readonly Regex HeadingPattern = new(@"^(#{1,6})\s+(.*)$", RegexOptions.Compiled);
-    private static readonly Regex LinkPattern = new(@"\[[^\]]*\]\(([^)]+)\)", RegexOptions.Compiled);
+    // 対象リポジトリの本文を読むので、行の長さに線形な NonBacktracking を使う。
+    // タイムアウトだと発動時に例外で索引全体が止まる。
+    private static readonly Regex HeadingPattern = new(@"^(#{1,6})\s+(.*)$", RegexOptions.NonBacktracking);
+    private static readonly Regex LinkPattern = new(@"\[[^\]]*\]\(([^)]+)\)", RegexOptions.NonBacktracking);
     private const int MaxChunkChars = 8000;
 
     /// <inheritdoc />
     public ParsedDocument Parse(string relativePath, string content)
     {
         var lines = SplitLines(content);
-        var headings = new string?[7];
-        var chunks = new List<DocumentChunk>();
+        var sections = new SectionBuffer(relativePath);
         var links = new List<DocumentLink>();
-        var buffer = new List<(int Line, string Text)>();
-        var sectionStart = 1;
-        var ordinal = 0;
 
-        void Flush()
-        {
-            if (buffer.Count == 0)
-            {
-                return;
-            }
-
-            var headingPath = BuildHeadingPath(headings, relativePath);
-            var text = string.Join('\n', buffer.Select(x => x.Text)).Trim();
-            var endLine = buffer[^1].Line;
-            if (text.Length == 0)
-            {
-                buffer.Clear();
-                return;
-            }
-
-            foreach (var part in SplitOversized(text, sectionStart, endLine))
-            {
-                chunks.Add(new DocumentChunk(
-                    headingPath,
-                    SpecId: null,
-                    part.Text,
-                    part.StartLine,
-                    part.EndLine,
-                    ordinal++));
-            }
-
-            buffer.Clear();
-        }
-
-        for (var i = 0; i < lines.Count; i++)
+        for (var i = BodyStart(lines); i < lines.Count; i++)
         {
             var lineNumber = i + 1;
             var line = lines[i];
@@ -66,39 +34,28 @@ public sealed class MarkdownDocumentParser : IDocumentParser
             var match = HeadingPattern.Match(line);
             if (match.Success)
             {
-                Flush();
-                var level = match.Groups[1].Value.Length;
-                var headingTitle = match.Groups[2].Value.Trim();
-                for (var l = level; l <= 6; l++)
-                {
-                    headings[l] = null;
-                }
-
-                headings[level] = headingTitle;
-                sectionStart = lineNumber;
-                buffer.Add((lineNumber, line));
-                continue;
+                sections.BeginHeading(match.Groups[1].Value.Length, match.Groups[2].Value.Trim(), lineNumber);
             }
 
-            if (i == 0 && line.StartsWith("---", StringComparison.Ordinal))
-            {
-                // YAML front matter は検索対象にしない。
-                var end = lines.FindIndex(1, x => x.StartsWith("---", StringComparison.Ordinal));
-                if (end > 0)
-                {
-                    i = end;
-                    continue;
-                }
-            }
-
-            buffer.Add((lineNumber, line));
+            sections.Append(lineNumber, line);
         }
 
-        Flush();
+        sections.Flush();
+        return new ParsedDocument(sections.Title, Classify(relativePath), sections.Chunks, links);
+    }
 
-        var title = headings.Skip(1).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))
-                    ?? Path.GetFileNameWithoutExtension(relativePath);
-        return new ParsedDocument(title, Classify(relativePath), chunks, links);
+    /// <summary>
+    /// 本文の先頭の添字を返す。YAML front matter は検索対象にしない。閉じていなければ本文として扱う。
+    /// </summary>
+    private static int BodyStart(List<string> lines)
+    {
+        if (lines.Count == 0 || !lines[0].StartsWith("---", StringComparison.Ordinal))
+        {
+            return 0;
+        }
+
+        var end = lines.FindIndex(1, x => x.StartsWith("---", StringComparison.Ordinal));
+        return end > 0 ? end + 1 : 0;
     }
 
     private static List<string> SplitLines(string content)
@@ -113,12 +70,6 @@ public sealed class MarkdownDocumentParser : IDocumentParser
         }
 
         return lines;
-    }
-
-    private static string BuildHeadingPath(string?[] headings, string relativePath)
-    {
-        var parts = headings.Skip(1).Where(x => !string.IsNullOrWhiteSpace(x)).Cast<string>().ToList();
-        return parts.Count == 0 ? Path.GetFileNameWithoutExtension(relativePath) : string.Join(" / ", parts);
     }
 
     private static string Classify(string relativePath)
@@ -203,42 +154,102 @@ public sealed class MarkdownDocumentParser : IDocumentParser
         return string.Join('/', parts);
     }
 
-    private static IEnumerable<(string Text, int StartLine, int EndLine)> SplitOversized(
-        string text,
-        int startLine,
-        int endLine)
+    /// <summary>
+    /// 見出しの階層と、見出しごとに溜めた行を持つ。見出しが変わるたびにチャンクへ確定する。
+    /// </summary>
+    /// <param name="relativePath">見出しが無いときの名前に使うパス。</param>
+    private sealed class SectionBuffer(string relativePath)
     {
-        if (text.Length <= MaxChunkChars)
+        private readonly string?[] _headings = new string?[7];
+        private readonly List<(int Line, string Text)> _lines = [];
+        private int _sectionStart = 1;
+        private int _ordinal;
+
+        public List<DocumentChunk> Chunks { get; } = [];
+
+        public string Title
+            => _headings.Skip(1).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))
+               ?? Path.GetFileNameWithoutExtension(relativePath);
+
+        public void BeginHeading(int level, string title, int lineNumber)
         {
-            yield return (text, startLine, endLine);
-            yield break;
+            Flush();
+            Array.Clear(_headings, level, _headings.Length - level);
+            _headings[level] = title;
+            _sectionStart = lineNumber;
         }
 
-        var paragraphs = text.Split("\n\n", StringSplitOptions.None);
-        var builder = new System.Text.StringBuilder();
-        var currentStart = startLine;
-        var consumedLines = 0;
-        foreach (var paragraph in paragraphs)
+        public void Append(int lineNumber, string line) => _lines.Add((lineNumber, line));
+
+        public void Flush()
         {
-            if (builder.Length > 0 && builder.Length + paragraph.Length > MaxChunkChars)
+            if (_lines.Count == 0)
             {
-                yield return (builder.ToString().Trim(), currentStart, startLine + consumedLines);
-                builder.Clear();
-                currentStart = startLine + consumedLines;
+                return;
+            }
+
+            var headingPath = HeadingPath();
+            var text = string.Join('\n', _lines.Select(x => x.Text)).Trim();
+            var endLine = _lines[^1].Line;
+            _lines.Clear();
+            if (text.Length == 0)
+            {
+                return;
+            }
+
+            Chunks.AddRange(SplitOversized(text, _sectionStart, endLine)
+                .Select(part => new DocumentChunk(
+                    headingPath,
+                    SpecId: null,
+                    part.Text,
+                    part.StartLine,
+                    part.EndLine,
+                    _ordinal++)));
+        }
+
+        private string HeadingPath()
+        {
+            var parts = _headings.Skip(1).Where(x => !string.IsNullOrWhiteSpace(x)).Cast<string>().ToList();
+            return parts.Count == 0 ? Path.GetFileNameWithoutExtension(relativePath) : string.Join(" / ", parts);
+        }
+
+        private static IEnumerable<(string Text, int StartLine, int EndLine)> SplitOversized(
+            string text,
+            int startLine,
+            int endLine)
+        {
+            if (text.Length <= MaxChunkChars)
+            {
+                yield return (text, startLine, endLine);
+                yield break;
+            }
+
+            var paragraphs = text.Split("\n\n", StringSplitOptions.None);
+            var builder = new System.Text.StringBuilder();
+            var currentStart = startLine;
+            var consumedLines = 0;
+            foreach (var paragraph in paragraphs)
+            {
+                if (builder.Length > 0 && builder.Length + paragraph.Length > MaxChunkChars)
+                {
+                    yield return (builder.ToString().Trim(), currentStart, startLine + consumedLines);
+                    builder.Clear();
+                    currentStart = startLine + consumedLines;
+                }
+
+                if (builder.Length > 0)
+                {
+                    builder.Append("\n\n");
+                }
+
+                builder.Append(paragraph);
+                consumedLines += paragraph.Split('\n').Length + 1;
             }
 
             if (builder.Length > 0)
             {
-                builder.Append("\n\n");
+                yield return (builder.ToString().Trim(), currentStart, endLine);
             }
-
-            builder.Append(paragraph);
-            consumedLines += paragraph.Split('\n').Length + 1;
-        }
-
-        if (builder.Length > 0)
-        {
-            yield return (builder.ToString().Trim(), currentStart, endLine);
         }
     }
 }

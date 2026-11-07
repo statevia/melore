@@ -195,6 +195,185 @@ public sealed class IndexFreshnessTests
         Assert.True(store.GetIndexedBlobShas().ContainsKey("a.md"));
     }
 
+    /// <summary>対象から消えたファイルは索引からも消す。</summary>
+    [Fact]
+    public async Task Index_RemovedFile_IsDeleted()
+    {
+        // Arrange
+        var context = await NewContextAsync();
+        await context.Indexer.IndexAsync(Settings(context.Root), CancellationToken.None);
+        context.Git.Files.Clear();
+
+        // Act
+        var status = await context.Indexer.IndexAsync(Settings(context.Root), CancellationToken.None);
+
+        // Assert
+        Assert.Equal(0, status.DocumentChunkCount);
+        Assert.Empty(context.Store.GetIndexedBlobShas());
+    }
+
+    /// <summary>解決できた意味関係だけを保存し、相手が無い関係は捨てる。</summary>
+    [Fact]
+    public async Task Index_SemanticGraph_StoresResolvedEdges()
+    {
+        // Arrange
+        var graph = new StubSemanticGraph(() =>
+        [
+            new SemanticRelation("Demo.Engine.Run()", "Demo.Engine.Step()", "calls"),
+            new SemanticRelation("Demo.Engine.Run()", "Demo.Engine.Step()", "calls"),
+            new SemanticRelation("Demo.Engine.Run()", "Demo.Missing()", "calls")
+        ]);
+        var context = await NewContextAsync(graph);
+        var settings = SolutionSettings(context.Root, "demo.sln");
+        await File.WriteAllTextAsync(Path.Combine(context.Root, "demo.sln"), "");
+
+        // Act
+        await context.Indexer.IndexAsync(settings, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(1, context.Store.CountRelationships("calls", null));
+    }
+
+    /// <summary>意味解析の失敗では索引全体を止めない。</summary>
+    [Fact]
+    public async Task Index_SemanticFailure_StillCompletes()
+    {
+        // Arrange
+        var graph = new StubSemanticGraph(() => throw new InvalidOperationException("broken solution"));
+        var context = await NewContextAsync(graph);
+        var settings = SolutionSettings(context.Root, "demo.sln");
+        await File.WriteAllTextAsync(Path.Combine(context.Root, "demo.sln"), "");
+
+        // Act
+        var status = await context.Indexer.IndexAsync(settings, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(1, graph.Calls);
+        Assert.Equal("aaa", status.IndexedRevision);
+    }
+
+    /// <summary>ソリューションが無ければ意味解析を呼ばない。</summary>
+    [Fact]
+    public async Task Index_MissingSolution_SkipsSemanticGraph()
+    {
+        // Arrange
+        var graph = new StubSemanticGraph(() => []);
+        var context = await NewContextAsync(graph);
+
+        // Act
+        await context.Indexer.IndexAsync(SolutionSettings(context.Root, "missing.sln"), CancellationToken.None);
+
+        // Assert
+        Assert.Equal(0, graph.Calls);
+    }
+
+    /// <summary>差分が無ければ何もしない。</summary>
+    [Fact]
+    public async Task EnsureFresh_NoChanges_ReturnsClean()
+    {
+        // Arrange
+        var context = await NewContextAsync();
+
+        // Act
+        var freshness = await context.Indexer.EnsureFreshAsync(Settings(context.Root), CancellationToken.None);
+
+        // Assert
+        Assert.Equal(new IndexFreshness(false, 0, 0), freshness);
+    }
+
+    /// <summary>差分が上限を超えたら索引せず dirty を返す。</summary>
+    [Fact]
+    public async Task EnsureFresh_TooManyChanges_ReturnsDirty()
+    {
+        // Arrange
+        var context = await NewContextAsync();
+        var count = IndexService.MaxAutoRefresh + 1;
+        context.Git.Changes.AddRange(
+            Enumerable.Range(0, count).Select(i => new WorktreeChange($"docs/{i}.md", Remove: false)));
+
+        // Act
+        var freshness = await context.Indexer.EnsureFreshAsync(Settings(context.Root), CancellationToken.None);
+
+        // Assert
+        Assert.Equal(new IndexFreshness(true, count, 0), freshness);
+    }
+
+    /// <summary>削除の差分と、読めなくなったファイルは索引から消す。</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task EnsureFresh_RemovedOrUnreadable_DeletesFile(bool remove)
+    {
+        // Arrange
+        var context = await NewContextAsync();
+        await context.Indexer.IndexAsync(Settings(context.Root), CancellationToken.None);
+        context.Git.Files.Clear();
+        context.Git.Changes.Add(new WorktreeChange("docs/a.md", remove));
+
+        // Act
+        var freshness = await context.Indexer.EnsureFreshAsync(Settings(context.Root), CancellationToken.None);
+
+        // Assert
+        Assert.Equal(1, freshness.RefreshedFileCount);
+        Assert.DoesNotContain("docs/a.md", context.Store.GetIndexedBlobShas().Keys);
+    }
+
+    /// <summary>blob が同じファイルは差分に出ても索引し直さない。</summary>
+    [Fact]
+    public async Task EnsureFresh_SameBlob_DoesNotRefresh()
+    {
+        // Arrange
+        var context = await NewContextAsync();
+        await context.Indexer.IndexAsync(Settings(context.Root), CancellationToken.None);
+        context.Git.Changes.Add(new WorktreeChange("docs/a.md", Remove: false));
+
+        // Act
+        var freshness = await context.Indexer.EnsureFreshAsync(Settings(context.Root), CancellationToken.None);
+
+        // Assert
+        Assert.Equal(new IndexFreshness(false, 1, 0), freshness);
+    }
+
+    private static async Task<IndexContext> NewContextAsync(ISemanticGraphExtractor? semantic = null)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "melore-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "docs"));
+        var markdown = Path.Combine(root, "docs", "a.md");
+        await File.WriteAllTextAsync(markdown, "# Title\n\nhello\n");
+        var code = Path.Combine(root, "Engine.cs");
+        await File.WriteAllTextAsync(
+            code,
+            "namespace Demo; public sealed class Engine { public void Run() {} public void Step() {} }");
+        var git = new StubGit
+        {
+            Head = "aaa",
+            Files =
+            {
+                new RepositoryFile("docs/a.md", markdown, "blob-1", "markdown"),
+                new RepositoryFile("Engine.cs", code, "blob-2", "csharp")
+            }
+        };
+        var store = new SqliteMeloreStore(Path.Combine(root, "melore.db"), "fixture", root);
+        var indexer = new IndexService(
+            git,
+            new MarkdownDocumentParser(),
+            new RoslynSyntaxAnalyzer(),
+            store,
+            new NullEmbeddingClient(),
+            NullLogger<IndexService>.Instance,
+            semantic);
+        return new IndexContext(root, git, store, indexer);
+    }
+
+    private static MeloreSettings SolutionSettings(string root, string solutionPath) => new()
+    {
+        RepositoryName = "fixture",
+        RepositoryPath = root,
+        SolutionPath = solutionPath
+    };
+
+    private sealed record IndexContext(string Root, StubGit Git, SqliteMeloreStore Store, IndexService Indexer);
+
     private static MeloreSettings Settings(string root) => new()
     {
         RepositoryName = "fixture",
@@ -233,6 +412,8 @@ public sealed class IndexFreshnessTests
 
         public List<GitRename> Renames { get; } = [];
 
+        public List<WorktreeChange> Changes { get; } = [];
+
         public Task<string?> GetHeadRevisionAsync(CancellationToken cancellationToken)
             => Task.FromResult(Head);
 
@@ -242,11 +423,22 @@ public sealed class IndexFreshnessTests
         public Task<IReadOnlyList<GitRename>> ListRenamesAsync(string? fromRevision, CancellationToken cancellationToken)
             => Task.FromResult<IReadOnlyList<GitRename>>(fromRevision is null ? [] : Renames);
 
-        public Task<IReadOnlyList<Melore.Core.Models.WorktreeChange>> ListWorktreeChangesAsync(CancellationToken cancellationToken)
-            => Task.FromResult<IReadOnlyList<Melore.Core.Models.WorktreeChange>>([]);
+        public Task<IReadOnlyList<WorktreeChange>> ListWorktreeChangesAsync(CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<WorktreeChange>>(Changes);
 
         public Task<RepositoryFile?> TryReadFileAsync(string relativePath, CancellationToken cancellationToken)
-            => Task.FromResult<RepositoryFile?>(null);
+            => Task.FromResult(Files.Find(f => f.RelativePath == relativePath));
+    }
+
+    private sealed class StubSemanticGraph(Func<IReadOnlyList<SemanticRelation>> extract) : ISemanticGraphExtractor
+    {
+        public int Calls { get; private set; }
+
+        public Task<IReadOnlyList<SemanticRelation>> ExtractAsync(string solutionPath, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(extract());
+        }
     }
 
     private sealed class CountingEmbeddings : IEmbeddingClient

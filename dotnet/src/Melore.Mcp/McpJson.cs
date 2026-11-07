@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using ModelContextProtocol;
@@ -6,19 +5,20 @@ using ModelContextProtocol;
 namespace Melore.Mcp;
 
 /// <summary>
-/// MCP の JSON で日本語を \u エスケープしない。
-/// SDK 2.3.0 の既定オプションは読み取り専用なので、エンコーダ欄だけ差し替える。
+/// MCP ツール結果の JSON 設定。
 /// </summary>
 public static class McpJson
 {
     /// <summary>
-    /// プロセスの MCP 既定オプションを緩いエンコーダにする。ツール登録より前に呼ぶ。
+    /// ツール結果の本文で日本語を \u エスケープしない設定。SDK の既定に、緩いエンコーダだけを足す。
     /// </summary>
-    public static void UseRelaxedUnicode()
+    /// <remarks>
+    /// エージェントが読むのはツール結果の本文で、ここのエスケープはトークン量に効く。
+    /// プロトコルの封筒は SDK の既定のままなので、stdout 上の表現は \u になることがある。
+    /// 受信側が JSON を解くと本文の文字列に戻る。
+    /// </remarks>
+    public static JsonSerializerOptions ToolOptions { get; } = new(McpJsonUtilities.DefaultOptions)
     {
-        var field = typeof(JsonSerializerOptions).GetField(
-            "_encoder",
-            BindingFlags.Instance | BindingFlags.NonPublic);
-        field?.SetValue(McpJsonUtilities.DefaultOptions, JavaScriptEncoder.UnsafeRelaxedJsonEscaping);
-    }
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
 }

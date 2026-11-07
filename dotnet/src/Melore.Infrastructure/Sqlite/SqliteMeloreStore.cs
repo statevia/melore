@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
 using Melore.Contracts;
 using Melore.Core;
 using Melore.Core.Models;
@@ -79,7 +78,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
             FROM files
             WHERE repository_id = $repo AND is_deleted = 0;
             """;
-        cmd.Parameters.AddWithValue("$repo", RepositoryId);
+        cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
         using var reader = cmd.ExecuteReader();
         while (reader.Read())
         {
@@ -141,7 +140,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
             VALUES ($id, $repo, $path, $lang, $sha, $ts, 0);
             """;
         insert.Parameters.AddWithValue("$id", id);
-        insert.Parameters.AddWithValue("$repo", RepositoryId);
+        insert.Parameters.AddWithValue(RepoParameter, RepositoryId);
         insert.Parameters.AddWithValue("$path", file.RelativePath);
         insert.Parameters.AddWithValue("$lang", file.Language);
         insert.Parameters.AddWithValue("$sha", file.BlobSha);
@@ -164,7 +163,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
                 VALUES ($id, $file, $title, $kind);
                 """;
             insertDoc.Parameters.AddWithValue("$id", documentId);
-            insertDoc.Parameters.AddWithValue("$file", fileId);
+            insertDoc.Parameters.AddWithValue(FileParameter, fileId);
             insertDoc.Parameters.AddWithValue("$title", document.Title);
             insertDoc.Parameters.AddWithValue("$kind", document.DocKind);
             insertDoc.ExecuteNonQuery();
@@ -244,10 +243,10 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
                      $start, $end, 0, $doc);
                 """;
             insert.Parameters.AddWithValue("$id", symbolId);
-            insert.Parameters.AddWithValue("$file", fileId);
+            insert.Parameters.AddWithValue(FileParameter, fileId);
             insert.Parameters.AddWithValue("$kind", symbol.Kind);
             insert.Parameters.AddWithValue("$fqn", symbol.Fqn);
-            insert.Parameters.AddWithValue("$name", symbol.Name);
+            insert.Parameters.AddWithValue(NameParameter, symbol.Name);
             insert.Parameters.AddWithValue("$containing", (object?)symbol.ContainingTypeFqn ?? DBNull.Value);
             insert.Parameters.AddWithValue("$sig", (object?)symbol.Signature ?? DBNull.Value);
             insert.Parameters.AddWithValue("$access", symbol.Accessibility);
@@ -262,7 +261,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
                 VALUES ($id, $name, $fqn, $sig, $doc);
                 """;
             fts.Parameters.AddWithValue("$id", symbolId);
-            fts.Parameters.AddWithValue("$name", symbol.Name);
+            fts.Parameters.AddWithValue(NameParameter, symbol.Name);
             fts.Parameters.AddWithValue("$fqn", symbol.Fqn);
             fts.Parameters.AddWithValue("$sig", symbol.Signature ?? "");
             fts.Parameters.AddWithValue("$doc", symbol.DocumentationComment ?? "");
@@ -278,7 +277,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
                 test.Parameters.AddWithValue("$id", Ids.New());
                 test.Parameters.AddWithValue("$symbol", symbolId);
                 test.Parameters.AddWithValue("$fw", symbol.TestFramework ?? "unknown");
-                test.Parameters.AddWithValue("$name", symbol.Name);
+                test.Parameters.AddWithValue(NameParameter, symbol.Name);
                 test.ExecuteNonQuery();
             }
         }
@@ -293,12 +292,28 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
             if (symbol.ContainingTypeFqn is not null &&
                 idsByFqn.TryGetValue(symbol.ContainingTypeFqn, out var parentId))
             {
-                InsertRelationship(parentId, "symbol", fromId, "symbol", "declares", "explicit", 1.0, symbol.Name);
+                InsertRelationship(new RelationshipEntry(
+                    "symbol",
+                    parentId,
+                    "symbol",
+                    fromId,
+                    "declares",
+                    RelationshipBasis.Explicit,
+                    1.0,
+                    symbol.Name));
             }
 
             foreach (var baseName in symbol.BaseTypeNames)
             {
-                InsertRelationship(fromId, "symbol", baseName, "type_name", "inherits", "inferred", 0.6, baseName);
+                InsertRelationship(new RelationshipEntry(
+                    "symbol",
+                    fromId,
+                    "type_name",
+                    baseName,
+                    "inherits",
+                    RelationshipBasis.Inferred,
+                    0.6,
+                    baseName));
             }
         }
 
@@ -317,7 +332,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
                 analyzer_versions = $ver, updated_at = $ts
             WHERE id = $id;
             """;
-        cmd.Parameters.AddWithValue("$name", repositoryName);
+        cmd.Parameters.AddWithValue(NameParameter, repositoryName);
         cmd.Parameters.AddWithValue("$root", rootPath);
         cmd.Parameters.AddWithValue("$rev", (object?)revision ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$ver", analyzerVersions);
@@ -403,7 +418,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
             WHERE f.repository_id = $repo AND f.is_deleted = 0 AND s.fqn = $fqn
             LIMIT 1;
             """;
-        cmd.Parameters.AddWithValue("$repo", RepositoryId);
+        cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
         cmd.Parameters.AddWithValue("$fqn", fqn);
         return cmd.ExecuteScalar() as string;
     }
@@ -493,7 +508,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
                 LIMIT $limit;
                 """;
             cmd.Parameters.AddWithValue("$q", ftsQuery);
-            cmd.Parameters.AddWithValue("$repo", RepositoryId);
+            cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
             cmd.Parameters.AddWithValue("$limit", limit);
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
@@ -516,7 +531,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
                 LIMIT $limit;
                 """;
             cmd.Parameters.AddWithValue("$q", ftsQuery);
-            cmd.Parameters.AddWithValue("$repo", RepositoryId);
+            cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
             cmd.Parameters.AddWithValue("$limit", limit);
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
@@ -542,7 +557,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
               AND (instr(lower(s.name), lower($q)) > 0 OR instr(lower(s.fqn), lower($q)) > 0)
             LIMIT $limit;
             """;
-        cmd.Parameters.AddWithValue("$repo", RepositoryId);
+        cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
         cmd.Parameters.AddWithValue("$q", query);
         cmd.Parameters.AddWithValue("$limit", limit);
         using var reader = cmd.ExecuteReader();
@@ -570,7 +585,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
                 WHERE f.repository_id = $repo AND f.is_deleted = 0
                   AND NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.chunk_id = c.id);
                 """;
-            cmd.Parameters.AddWithValue("$repo", RepositoryId);
+            cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
@@ -589,7 +604,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
                   AND NOT EXISTS (SELECT 1 FROM tests t WHERE t.symbol_id = s.id)
                   AND NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.chunk_id = s.id);
                 """;
-            cmd.Parameters.AddWithValue("$repo", RepositoryId);
+            cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
@@ -680,7 +695,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
 
         using var find = _connection.CreateCommand();
         find.CommandText = "SELECT id FROM repositories WHERE name = $name LIMIT 1;";
-        find.Parameters.AddWithValue("$name", _repositoryName);
+        find.Parameters.AddWithValue(NameParameter, _repositoryName);
         var existing = find.ExecuteScalar() as string;
         if (existing is not null)
         {
@@ -695,7 +710,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
             VALUES ($id, $name, $root, NULL, NULL, $ts);
             """;
         insert.Parameters.AddWithValue("$id", _repositoryId);
-        insert.Parameters.AddWithValue("$name", _repositoryName);
+        insert.Parameters.AddWithValue(NameParameter, _repositoryName);
         insert.Parameters.AddWithValue("$root", _rootPath);
         insert.Parameters.AddWithValue("$ts", DateTimeOffset.UtcNow.ToString("O"));
         insert.ExecuteNonQuery();
@@ -705,7 +720,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
     {
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = "SELECT id FROM files WHERE repository_id = $repo AND path = $path;";
-        cmd.Parameters.AddWithValue("$repo", RepositoryId);
+        cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
         cmd.Parameters.AddWithValue("$path", relativePath);
         return cmd.ExecuteScalar() as string;
     }
@@ -732,7 +747,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
             DELETE FROM symbols WHERE file_id = $file;
             DELETE FROM files WHERE id = $file;
             """;
-        cmd.Parameters.AddWithValue("$file", fileId);
+        cmd.Parameters.AddWithValue(FileParameter, fileId);
         cmd.ExecuteNonQuery();
     }
 
@@ -750,7 +765,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
             DELETE FROM document_chunks WHERE document_id IN (SELECT id FROM documents WHERE file_id = $file);
             DELETE FROM documents WHERE file_id = $file;
             """;
-        cmd.Parameters.AddWithValue("$file", fileId);
+        cmd.Parameters.AddWithValue(FileParameter, fileId);
         cmd.ExecuteNonQuery();
     }
 
@@ -765,7 +780,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
             DELETE FROM symbol_fts WHERE id IN (SELECT id FROM symbols WHERE file_id = $file);
             DELETE FROM symbols WHERE file_id = $file;
             """;
-        cmd.Parameters.AddWithValue("$file", fileId);
+        cmd.Parameters.AddWithValue(FileParameter, fileId);
         cmd.ExecuteNonQuery();
     }
 
@@ -776,7 +791,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
         return cmd.ExecuteScalar() is not null;
     }
 
-    private SearchHit ReadDocumentHit(SqliteDataReader reader, HitKind kind, int rank)
+    private static SearchHit ReadDocumentHit(SqliteDataReader reader, HitKind kind, int rank)
     {
         var id = reader.GetString(0);
         var title = reader.GetString(1);
@@ -845,6 +860,9 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
     }
 
     private const int CurrentSchemaVersion = 2;
+    private const string RepoParameter = "$repo";
+    private const string FileParameter = "$file";
+    private const string NameParameter = "$name";
 
     private void MigrateFtsIfNeeded()
     {
@@ -883,7 +901,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
 
     private static string Snippet(string text)
     {
-        var flat = Regex.Replace(text, @"\s+", " ").Trim();
+        var flat = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
         return flat.Length <= 280 ? flat : flat[..280] + "…";
     }
 

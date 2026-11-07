@@ -10,6 +10,9 @@
     <ProjectReference Include="..\..\src\Melore.Parsing.Markdown\Melore.Parsing.Markdown.csproj" />
     <ProjectReference Include="..\..\src\Melore.Parsing.Roslyn\Melore.Parsing.Roslyn.csproj" />
     <ProjectReference Include="..\..\src\Melore.Mcp\Melore.Mcp.csproj" />
+    <ProjectReference Include="..\..\src\Melore.Cli\Melore.Cli.csproj" />
+    <ProjectReference Include="..\..\src\Melore.Host\Melore.Host.csproj" />
+    <ProjectReference Include="..\..\src\Melore.Providers.Ollama\Melore.Providers.Ollama.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Build.Framework" ExcludeAssets="runtime" PrivateAssets="all" />

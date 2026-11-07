@@ -21,6 +21,13 @@ cd dotnet
 dotnet test Melore.slnx
 ```
 
+カバレッジを見る（CI と同じコレクター。追加のパッケージは要らない）:
+
+```powershell
+cd dotnet
+dotnet test Melore.slnx --collect "Code Coverage;Format=cobertura" --results-directory TestResults
+```
+
 CLI を `artifacts/melore` に出す:
 
 ```powershell

@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Melore.Tests;
 
-public sealed class ExplainTests
+public sealed partial class ExplainTests
 {
     /// <summary>ヒットが無いときは LLM を呼ばず、不足を返す。</summary>
     [Fact]
@@ -175,7 +175,7 @@ public sealed class ExplainTests
         return store;
     }
 
-    private sealed class RecordingChatClient : IMeloreChatClient
+    private sealed partial class RecordingChatClient : IMeloreChatClient
     {
         public bool IsAvailable => true;
 
@@ -194,11 +194,14 @@ public sealed class ExplainTests
             _ = systemPrompt;
             CallCount++;
             LastUser = userPrompt;
-            EvidenceIdsFromPrompt = System.Text.RegularExpressions.Regex
-                .Matches(userPrompt, @"### \[([^\]]+)\]")
+            EvidenceIdsFromPrompt = EvidenceHeading()
+                .Matches(userPrompt)
                 .Select(m => m.Groups[1].Value)
                 .ToList();
             return Task.FromResult<string?>(Reply);
         }
+
+        [System.Text.RegularExpressions.GeneratedRegex(@"### \[([^\]]+)\]")]
+        private static partial System.Text.RegularExpressions.Regex EvidenceHeading();
     }
 }

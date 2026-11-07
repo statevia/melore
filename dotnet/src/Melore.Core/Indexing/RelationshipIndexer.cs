@@ -13,7 +13,19 @@ public static class RelationshipIndexer
     /// <summary>関係規則の版。規則の出力を変えたら上げる。既存チャンクだけで足りる変更は上げなくてよい。</summary>
     public const string AnalyzerVersion = "rel:1";
 
-    private static readonly Regex BacktickName = new("`([A-Z][A-Za-z0-9_]{3,})`", RegexOptions.Compiled);
+    private const string SymbolKind = "symbol";
+    private const string ChunkKind = "document_chunk";
+    private const string TestedBy = "tested_by";
+    private const string Specifies = "specifies";
+    private const string Contradicts = "contradicts";
+
+    /// <summary>specifies の追加を止める目安。巨大な文書群で関係が増えすぎないようにする。</summary>
+    private const int MaxSpecifies = 2000;
+
+    /// <summary>1 つの名前に複数の型があるとき、関係を張る型の上限。</summary>
+    private const int MaxTypesPerName = 2;
+
+    private static readonly Regex BacktickName = new("`([A-Z][A-Za-z0-9_]{3,})`", RegexOptions.NonBacktracking);
     private static readonly HashSet<string> CommonWords = new(StringComparer.Ordinal)
     {
         "MUST", "SHOULD", "GET", "POST", "PUT", "HTTP", "JSON", "YAML", "NULL", "TRUE", "FALSE"
@@ -24,9 +36,9 @@ public static class RelationshipIndexer
     /// </summary>
     public static int Rebuild(IMeloreStore store)
     {
-        store.DeleteRelationshipsByType("specifies");
-        store.DeleteRelationshipsByType("contradicts");
-        store.DeleteRelationshipsByType("tested_by");
+        store.DeleteRelationshipsByType(Specifies);
+        store.DeleteRelationshipsByType(Contradicts);
+        store.DeleteRelationshipsByType(TestedBy);
 
         var types = store.ListTypeSymbols();
         var chunks = store.ListChunks();
@@ -35,10 +47,14 @@ public static class RelationshipIndexer
             .Where(t => t.Name.Length >= 4)
             .GroupBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+        var byCompactName = types
+            .Where(t => t.Name.Length >= 6)
+            .GroupBy(t => Compact(t.Name), StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
         var added = 0;
         added += AddTestedBy(store, tests, byName);
-        added += AddSpecifies(store, chunks, types, byName);
+        added += AddSpecifies(store, chunks, byName, byCompactName);
         return added;
     }
 
@@ -46,123 +62,128 @@ public static class RelationshipIndexer
         IMeloreStore store,
         IReadOnlyList<IndexedTestMethod> tests,
         Dictionary<string, List<IndexedTypeSymbol>> byName)
+        => tests
+            .Where(test => test.ContainingTypeName is not null)
+            .Sum(test => LinkTest(store, test, byName));
+
+    /// <summary>
+    /// クラス名の規約で対象型を探し、無ければ同じファイルのテストクラスへ推定の関係を張る。
+    /// </summary>
+    private static int LinkTest(
+        IMeloreStore store,
+        IndexedTestMethod test,
+        Dictionary<string, List<IndexedTypeSymbol>> byName)
+    {
+        var className = test.ContainingTypeName!;
+        var shortName = className[(className.LastIndexOf('.') + 1)..];
+        if (TestTarget(shortName) is { } target && byName.TryGetValue(target, out var matches))
+        {
+            var targets = matches.Take(MaxTypesPerName).ToList();
+            targets.ForEach(type => store.AddRelationship(new RelationshipEntry(
+                SymbolKind,
+                type.Id,
+                SymbolKind,
+                test.Id,
+                TestedBy,
+                RelationshipBasis.Explicit,
+                1.0,
+                "class name " + shortName)));
+            return targets.Count;
+        }
+
+        if (test.ContainingTypeId is null)
+        {
+            return 0;
+        }
+
+        store.AddRelationship(new RelationshipEntry(
+            SymbolKind,
+            test.ContainingTypeId,
+            SymbolKind,
+            test.Id,
+            TestedBy,
+            RelationshipBasis.Inferred,
+            0.4,
+            "same file test class"));
+        return 1;
+    }
+
+    private static string? TestTarget(string shortName)
+        => shortName.EndsWith("Tests", StringComparison.Ordinal) && shortName.Length > 5
+            ? shortName[..^5]
+            : null;
+
+    private static int AddSpecifies(
+        IMeloreStore store,
+        IReadOnlyList<IndexedChunk> chunks,
+        Dictionary<string, List<IndexedTypeSymbol>> byName,
+        Dictionary<string, IndexedTypeSymbol> byCompactName)
     {
         var added = 0;
-        foreach (var test in tests)
+        foreach (var chunk in chunks)
         {
-            var className = test.ContainingTypeName;
-            if (className is null)
+            if (added >= MaxSpecifies)
             {
-                continue;
+                break;
             }
 
-            var shortName = className.Contains('.', StringComparison.Ordinal)
-                ? className[(className.LastIndexOf('.') + 1)..]
-                : className;
-            if (shortName.EndsWith("Tests", StringComparison.Ordinal) && shortName.Length > 5)
-            {
-                var target = shortName[..^5];
-                if (byName.TryGetValue(target, out var matches))
-                {
-                    foreach (var type in matches.Take(2))
-                    {
-                        store.AddRelationship(
-                            "symbol",
-                            type.Id,
-                            "symbol",
-                            test.Id,
-                            "tested_by",
-                            RelationshipBasis.Explicit,
-                            1.0,
-                            "class name " + shortName);
-                        added++;
-                    }
-
-                    continue;
-                }
-            }
-
-            if (test.ContainingTypeId is not null)
-            {
-                store.AddRelationship(
-                    "symbol",
-                    test.ContainingTypeId,
-                    "symbol",
-                    test.Id,
-                    "tested_by",
-                    RelationshipBasis.Inferred,
-                    0.4,
-                    "same file test class");
-                added++;
-            }
+            added += LinkChunk(store, chunk, byName, byCompactName);
         }
 
         return added;
     }
 
-    private static int AddSpecifies(
+    /// <summary>
+    /// 見出しの末尾が型名なら確定、ファイル名が型名と一致すれば推定の関係を張る。
+    /// </summary>
+    private static int LinkChunk(
         IMeloreStore store,
-        IReadOnlyList<IndexedChunk> chunks,
-        IReadOnlyList<IndexedTypeSymbol> types,
-        Dictionary<string, List<IndexedTypeSymbol>> byName)
+        IndexedChunk chunk,
+        Dictionary<string, List<IndexedTypeSymbol>> byName,
+        Dictionary<string, IndexedTypeSymbol> byCompactName)
     {
-        var added = 0;
-        foreach (var chunk in chunks)
+        var headingTail = HeadingTail(chunk.HeadingPath);
+        if (headingTail.Length >= 4 && byName.TryGetValue(headingTail, out var exact))
         {
-            if (added >= 2000)
-            {
-                break;
-            }
-
-            var headingTail = HeadingTail(chunk.HeadingPath);
-            if (headingTail.Length >= 4 && byName.TryGetValue(headingTail, out var exact))
-            {
-                foreach (var type in exact.Take(2))
-                {
-                    store.AddRelationship(
-                        "document_chunk",
-                        chunk.Id,
-                        "symbol",
-                        type.Id,
-                        "specifies",
-                        RelationshipBasis.Explicit,
-                        1.0,
-                        "heading equals " + type.Name);
-                    added++;
-                    MaybeContradict(store, chunk, type);
-                }
-
-                continue;
-            }
-
-            foreach (var type in types)
-            {
-                if (type.Name.Length < 6)
-                {
-                    continue;
-                }
-
-                var pathCompact = Compact(Path.GetFileNameWithoutExtension(chunk.Path));
-                var nameCompact = Compact(type.Name);
-                if (pathCompact.Length >= 6 && pathCompact == nameCompact)
-                {
-                    store.AddRelationship(
-                        "document_chunk",
-                        chunk.Id,
-                        "symbol",
-                        type.Id,
-                        "specifies",
-                        RelationshipBasis.Inferred,
-                        0.55,
-                        "path stem " + type.Name);
-                    added++;
-                    MaybeContradict(store, chunk, type);
-                    break;
-                }
-            }
+            var targets = exact.Take(MaxTypesPerName).ToList();
+            targets.ForEach(type => AddSpecified(
+                store,
+                chunk,
+                type,
+                RelationshipBasis.Explicit,
+                1.0,
+                "heading equals " + type.Name));
+            return targets.Count;
         }
 
-        return added;
+        var pathCompact = Compact(Path.GetFileNameWithoutExtension(chunk.Path));
+        if (pathCompact.Length < 6 || !byCompactName.TryGetValue(pathCompact, out var byPath))
+        {
+            return 0;
+        }
+
+        AddSpecified(store, chunk, byPath, RelationshipBasis.Inferred, 0.55, "path stem " + byPath.Name);
+        return 1;
+    }
+
+    private static void AddSpecified(
+        IMeloreStore store,
+        IndexedChunk chunk,
+        IndexedTypeSymbol type,
+        RelationshipBasis basis,
+        double confidence,
+        string evidence)
+    {
+        store.AddRelationship(new RelationshipEntry(
+            ChunkKind,
+            chunk.Id,
+            SymbolKind,
+            type.Id,
+            Specifies,
+            basis,
+            confidence,
+            evidence));
+        MaybeContradict(store, chunk, type);
     }
 
     private static void MaybeContradict(IMeloreStore store, IndexedChunk chunk, IndexedTypeSymbol type)
@@ -177,25 +198,23 @@ public static class RelationshipIndexer
             })
             .ToHashSet(StringComparer.Ordinal);
         names.Add(type.Name);
-        foreach (Match match in BacktickName.Matches(chunk.Text))
+        var unknown = BacktickName.Matches(chunk.Text)
+            .Select(match => match.Groups[1].Value)
+            .FirstOrDefault(name => !CommonWords.Contains(name) && !names.Contains(name));
+        if (unknown is null)
         {
-            var name = match.Groups[1].Value;
-            if (CommonWords.Contains(name) || names.Contains(name))
-            {
-                continue;
-            }
-
-            store.AddRelationship(
-                "document_chunk",
-                chunk.Id,
-                "symbol",
-                type.Id,
-                "contradicts",
-                RelationshipBasis.Inferred,
-                0.35,
-                "backtick " + name + " not in members of " + type.Name);
-            break;
+            return;
         }
+
+        store.AddRelationship(new RelationshipEntry(
+            ChunkKind,
+            chunk.Id,
+            SymbolKind,
+            type.Id,
+            Contradicts,
+            RelationshipBasis.Inferred,
+            0.35,
+            "backtick " + unknown + " not in members of " + type.Name));
     }
 
     private static string HeadingTail(string headingPath)
@@ -211,5 +230,5 @@ public static class RelationshipIndexer
     }
 
     private static string Compact(string value)
-        => Regex.Replace(value, "[^A-Za-z0-9]", "", RegexOptions.None).ToLowerInvariant();
+        => string.Concat(value.Where(char.IsAsciiLetterOrDigit)).ToLowerInvariant();
 }
