@@ -46,6 +46,9 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         shell: powershell
         run: |
-          ${{ runner.temp }}\scanner\dotnet-sonarscanner begin /k:"statevia_melore" /n:"Melore" /o:"statevia" /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+          ${{ runner.temp }}\scanner\dotnet-sonarscanner begin /k:"statevia_melore" /n:"Melore" /o:"statevia" /d:sonar.token="${{ secrets.SONAR_TOKEN }}" /d:sonar.cs.vscoveragexml.reportsPaths="dotnet/TestResults/**/*.xml" /d:sonar.exclusions=".cursor/**,.claude/**" /d:sonar.coverage.exclusions="dotnet/src/Melore.Cli/Program.cs,dotnet/src/Melore.Mcp/Program.cs"
           dotnet build dotnet/Melore.slnx
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet test dotnet/Melore.slnx --no-build --collect "Code Coverage;Format=xml" --results-directory dotnet/TestResults
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ${{ runner.temp }}\scanner\dotnet-sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
