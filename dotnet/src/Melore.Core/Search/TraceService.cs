@@ -47,7 +47,7 @@ public sealed class TraceService(IMeloreStore store)
             }
         }
 
-        return new TraceResult(root, walk.Nodes, Deduplicate(walk.Edges), Limitation(walk.Truncated));
+        return new TraceResult(root, walk.ListNodes(), Deduplicate(walk.Edges), Limitation(walk.Truncated));
     }
 
     private static HashSet<string>? AllowedTypes(IReadOnlyCollection<string>? relTypes)
@@ -65,9 +65,6 @@ public sealed class TraceService(IMeloreStore store)
 
     private static TraceNode ToNode(SearchHit hit)
         => new(hit.Id, hit.Kind.ToString(), hit.Title, hit.Source.Path, hit.Source.StartLine, hit.Source.EndLine);
-
-    private static int Size(TraceNode node)
-        => node.Id.Length + node.Kind.Length + node.Name.Length + node.Path.Length + 24;
 
     private static List<TraceEdge> Deduplicate(List<TraceEdge> edges)
         => edges
@@ -90,7 +87,7 @@ public sealed class TraceService(IMeloreStore store)
 
         public bool Truncated { get; private set; }
 
-        public List<TraceNode> Nodes => _nodes.Values.ToList();
+        public List<TraceNode> ListNodes() => _nodes.Values.ToList();
 
         public bool TryNext(out TraceNode node, out int depth)
         {
@@ -121,5 +118,8 @@ public sealed class TraceService(IMeloreStore store)
                 }
             }
         }
+
+        private static int Size(TraceNode node)
+            => node.Id.Length + node.Kind.Length + node.Name.Length + node.Path.Length + 24;
     }
 }

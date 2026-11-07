@@ -155,19 +155,19 @@ public sealed class MeloreCli(TextWriter output)
         var limit = parse.GetValue(_limit);
         await using var host = CreateRuntime(settings);
         var freshness = await host.Indexer.EnsureFreshAsync(settings, cancellationToken).ConfigureAwait(false);
-        output.WriteLine(
-            $"dirty\t{freshness.Dirty}\tfiles\t{freshness.DirtyFileCount}\trefreshed\t{freshness.RefreshedFileCount}");
+        await output.WriteLineAsync(
+            $"dirty\t{freshness.Dirty}\tfiles\t{freshness.DirtyFileCount}\trefreshed\t{freshness.RefreshedFileCount}").ConfigureAwait(false);
         var hits = await host.Search.SearchAsync(query, limit, cancellationToken).ConfigureAwait(false);
         foreach (var hit in hits)
         {
-            output.WriteLine(
-                $"{hit.Kind}\t{hit.Source.Path}:{hit.Source.StartLine}-{hit.Source.EndLine}\t{hit.Title}");
-            output.WriteLine($"  {hit.Snippet}");
+            await output.WriteLineAsync(
+                $"{hit.Kind}\t{hit.Source.Path}:{hit.Source.StartLine}-{hit.Source.EndLine}\t{hit.Title}").ConfigureAwait(false);
+            await output.WriteLineAsync($"  {hit.Snippet}").ConfigureAwait(false);
         }
 
         if (hits.Count == 0)
         {
-            output.WriteLine("ヒットなし");
+            await output.WriteLineAsync("ヒットなし").ConfigureAwait(false);
         }
 
         return 0;
@@ -181,8 +181,8 @@ public sealed class MeloreCli(TextWriter output)
         await host.Indexer.EnsureFreshAsync(settings, cancellationToken).ConfigureAwait(false);
         foreach (var related in host.References.GetReferences(target, parse.GetValue(_limit)))
         {
-            output.WriteLine(
-                $"{related.Basis}\t{related.RelType}\t{related.Hit.Source.Path}:{related.Hit.Source.StartLine}\t{related.Hit.Title}");
+            await output.WriteLineAsync(
+                $"{related.Basis}\t{related.RelType}\t{related.Hit.Source.Path}:{related.Hit.Source.StartLine}\t{related.Hit.Title}").ConfigureAwait(false);
         }
 
         return 0;
@@ -232,17 +232,17 @@ public sealed class MeloreCli(TextWriter output)
         await using var host = CreateRuntime(settings);
         await host.Indexer.EnsureFreshAsync(settings, cancellationToken).ConfigureAwait(false);
         var result = await host.Explain.ExplainAsync(query, limit, cancellationToken).ConfigureAwait(false);
-        output.WriteLine(result.Answer);
+        await output.WriteLineAsync(result.Answer).ConfigureAwait(false);
         if (result.Limitation is not null)
         {
-            output.WriteLine($"limitation\t{result.Limitation}");
+            await output.WriteLineAsync($"limitation\t{result.Limitation}").ConfigureAwait(false);
         }
 
-        output.WriteLine($"chat\t{result.ChatUsed}\t{result.ChatModel}");
-        output.WriteLine($"evidence_ids\t{string.Join(",", result.EvidenceIds)}");
+        await output.WriteLineAsync($"chat\t{result.ChatUsed}\t{result.ChatModel}").ConfigureAwait(false);
+        await output.WriteLineAsync($"evidence_ids\t{string.Join(",", result.EvidenceIds)}").ConfigureAwait(false);
         foreach (var hit in result.Evidence)
         {
-            output.WriteLine($"{hit.Kind}\t{hit.Path}:{hit.StartLine}-{hit.EndLine}\t{hit.Title}");
+            await output.WriteLineAsync($"{hit.Kind}\t{hit.Path}:{hit.StartLine}-{hit.EndLine}\t{hit.Title}").ConfigureAwait(false);
         }
 
         return 0;

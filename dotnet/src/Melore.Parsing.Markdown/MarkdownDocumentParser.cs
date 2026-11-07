@@ -154,45 +154,6 @@ public sealed class MarkdownDocumentParser : IDocumentParser
         return string.Join('/', parts);
     }
 
-    private static IEnumerable<(string Text, int StartLine, int EndLine)> SplitOversized(
-        string text,
-        int startLine,
-        int endLine)
-    {
-        if (text.Length <= MaxChunkChars)
-        {
-            yield return (text, startLine, endLine);
-            yield break;
-        }
-
-        var paragraphs = text.Split("\n\n", StringSplitOptions.None);
-        var builder = new System.Text.StringBuilder();
-        var currentStart = startLine;
-        var consumedLines = 0;
-        foreach (var paragraph in paragraphs)
-        {
-            if (builder.Length > 0 && builder.Length + paragraph.Length > MaxChunkChars)
-            {
-                yield return (builder.ToString().Trim(), currentStart, startLine + consumedLines);
-                builder.Clear();
-                currentStart = startLine + consumedLines;
-            }
-
-            if (builder.Length > 0)
-            {
-                builder.Append("\n\n");
-            }
-
-            builder.Append(paragraph);
-            consumedLines += paragraph.Split('\n').Length + 1;
-        }
-
-        if (builder.Length > 0)
-        {
-            yield return (builder.ToString().Trim(), currentStart, endLine);
-        }
-    }
-
     /// <summary>
     /// 見出しの階層と、見出しごとに溜めた行を持つ。見出しが変わるたびにチャンクへ確定する。
     /// </summary>
@@ -250,6 +211,45 @@ public sealed class MarkdownDocumentParser : IDocumentParser
         {
             var parts = _headings.Skip(1).Where(x => !string.IsNullOrWhiteSpace(x)).Cast<string>().ToList();
             return parts.Count == 0 ? Path.GetFileNameWithoutExtension(relativePath) : string.Join(" / ", parts);
+        }
+
+        private static IEnumerable<(string Text, int StartLine, int EndLine)> SplitOversized(
+            string text,
+            int startLine,
+            int endLine)
+        {
+            if (text.Length <= MaxChunkChars)
+            {
+                yield return (text, startLine, endLine);
+                yield break;
+            }
+
+            var paragraphs = text.Split("\n\n", StringSplitOptions.None);
+            var builder = new System.Text.StringBuilder();
+            var currentStart = startLine;
+            var consumedLines = 0;
+            foreach (var paragraph in paragraphs)
+            {
+                if (builder.Length > 0 && builder.Length + paragraph.Length > MaxChunkChars)
+                {
+                    yield return (builder.ToString().Trim(), currentStart, startLine + consumedLines);
+                    builder.Clear();
+                    currentStart = startLine + consumedLines;
+                }
+
+                if (builder.Length > 0)
+                {
+                    builder.Append("\n\n");
+                }
+
+                builder.Append(paragraph);
+                consumedLines += paragraph.Split('\n').Length + 1;
+            }
+
+            if (builder.Length > 0)
+            {
+                yield return (builder.ToString().Trim(), currentStart, endLine);
+            }
         }
     }
 }
