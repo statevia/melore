@@ -12,6 +12,7 @@
 | [architecture/data-model.md](architecture/data-model.md) | 何を永続化するか |
 | [decisions/README.md](decisions/README.md) | なぜその技術にしたか |
 | [guides/implementation-plan.md](guides/implementation-plan.md) | どの順で作るか |
+| [guides/cli.md](guides/cli.md) | CLI のコマンドと出力は何か |
 | [guides/mcp-tool-candidates.md](guides/mcp-tool-candidates.md) | MCP ツールの追加候補 |
 | [guides/search-gaps.md](guides/search-gaps.md) | 検索漏れと対応 |
 | [guides/agent-task-accuracy-plan.md](guides/agent-task-accuracy-plan.md) | Melore の有無でタスク精度はどう違い、何を直すか |

@@ -51,4 +51,21 @@ public sealed class MarkdownDocumentParserTests
         Assert.Equal("docs/specifications/execution/fsm.md", link.TargetRelativePath);
         Assert.Equal(3, link.Line);
     }
+
+    /// <summary>末尾改行で endLine がファイル行数を超えない。</summary>
+    [Fact]
+    public void Parse_TrailingNewline_EndLineStaysInFile()
+    {
+        // Arrange
+        var parser = new MarkdownDocumentParser();
+        const string markdown = "# Title\n\nBody line.\n";
+        var physical = markdown.Replace("\r\n", "\n", StringComparison.Ordinal).TrimEnd('\n').Split('\n').Length;
+
+        // Act
+        var document = parser.Parse("docs/a.md", markdown);
+
+        // Assert
+        var chunk = Assert.Single(document.Chunks);
+        Assert.InRange(chunk.EndLine, 1, physical);
+    }
 }

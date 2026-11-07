@@ -2,6 +2,7 @@ using Melore.Contracts;
 using Melore.Core.Indexing;
 using Melore.Core.Models;
 using Melore.Core.Ports;
+using Melore.Core.Search;
 using Melore.Infrastructure.Git;
 using Melore.Infrastructure.Sqlite;
 using Melore.Parsing.Markdown;
@@ -131,6 +132,50 @@ public sealed class IndexFreshnessTests
         Assert.NotEqual(sha1, sha2);
     }
 
+    /// <summary>未追跡の型は、その場の再索引のあと検索 1 位になる。</summary>
+    [Fact]
+    public async Task EnsureFresh_UntrackedType_RanksFirst()
+    {
+        // Arrange
+        var root = Path.Combine(Path.GetTempPath(), "melore-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "dotnet"));
+        await RunGit(root, ["init"]);
+        var tracked = Path.Combine(root, "dotnet", "Tracked.cs");
+        await File.WriteAllTextAsync(tracked, "namespace Demo; public sealed class Tracked {}");
+        await RunGit(root, ["add", "dotnet/Tracked.cs"]);
+        await RunGit(root, ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "init"]);
+        var settings = new MeloreSettings
+        {
+            RepositoryName = "fixture",
+            RepositoryPath = root,
+            Include = ["dotnet/**/*.cs"],
+            Exclude = []
+        };
+        using var store = new SqliteMeloreStore(Path.Combine(root, "melore.db"), "fixture", root);
+        var indexer = new IndexService(
+            new GitWorkspace(settings),
+            new MarkdownDocumentParser(),
+            new RoslynSyntaxAnalyzer(),
+            store,
+            new NullEmbeddingClient(),
+            NullLogger<IndexService>.Instance);
+        await indexer.IndexAsync(settings, CancellationToken.None);
+        await File.WriteAllTextAsync(
+            Path.Combine(root, "dotnet", "InProcessBranchScope.cs"),
+            "namespace Demo; public sealed class InProcessBranchScope {}");
+
+        // Act
+        var freshness = await indexer.EnsureFreshAsync(settings, CancellationToken.None);
+        var hits = await new SearchService(store, new NullEmbeddingClient(), new NoOpReranker())
+            .SearchAsync("InProcessBranchScope", 8, CancellationToken.None);
+
+        // Assert
+        Assert.False(freshness.Dirty);
+        Assert.True(freshness.RefreshedFileCount >= 1);
+        var first = Assert.Single(hits, h => h.Source.Path.Contains("InProcessBranchScope.cs", StringComparison.Ordinal));
+        Assert.Equal(hits[0].Id, first.Id);
+    }
+
     /// <summary>RelocateFile は宛先が既にあると何もしない。</summary>
     [Fact]
     public void RelocateFile_NoOpWhenDestinationExists()
@@ -196,6 +241,12 @@ public sealed class IndexFreshnessTests
 
         public Task<IReadOnlyList<GitRename>> ListRenamesAsync(string? fromRevision, CancellationToken cancellationToken)
             => Task.FromResult<IReadOnlyList<GitRename>>(fromRevision is null ? [] : Renames);
+
+        public Task<IReadOnlyList<Melore.Core.Models.WorktreeChange>> ListWorktreeChangesAsync(CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<Melore.Core.Models.WorktreeChange>>([]);
+
+        public Task<RepositoryFile?> TryReadFileAsync(string relativePath, CancellationToken cancellationToken)
+            => Task.FromResult<RepositoryFile?>(null);
     }
 
     private sealed class CountingEmbeddings : IEmbeddingClient

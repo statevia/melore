@@ -49,6 +49,9 @@ searchCommand.SetAction(async (parse, ct) =>
     var query = parse.GetRequiredValue(queryArgument);
     var limit = parse.GetValue(limitOption);
     await using var host = CreateRuntime(settings);
+    var freshness = await host.Indexer.EnsureFreshAsync(settings, ct).ConfigureAwait(false);
+    Console.WriteLine(
+        $"dirty\t{freshness.Dirty}\tfiles\t{freshness.DirtyFileCount}\trefreshed\t{freshness.RefreshedFileCount}");
     var hits = await host.Search.SearchAsync(query, limit, ct).ConfigureAwait(false);
     foreach (var hit in hits)
     {
@@ -70,41 +73,62 @@ var targetArgument = new Argument<string>("target") { Description = "ID / FQN / 
 referencesCommand.Options.Add(configOption);
 referencesCommand.Options.Add(limitOption);
 referencesCommand.Arguments.Add(targetArgument);
-referencesCommand.SetAction((parse, _) =>
+referencesCommand.SetAction(async (parse, ct) =>
 {
     var settings = SettingsLoader.Load(parse.GetRequiredValue(configOption));
     var target = parse.GetRequiredValue(targetArgument);
-    using var host = CreateRuntime(settings);
+    await using var host = CreateRuntime(settings);
+    await host.Indexer.EnsureFreshAsync(settings, ct).ConfigureAwait(false);
     foreach (var related in host.References.GetReferences(target, parse.GetValue(limitOption)))
     {
         Console.WriteLine(
             $"{related.Basis}\t{related.RelType}\t{related.Hit.Source.Path}:{related.Hit.Source.StartLine}\t{related.Hit.Title}");
     }
 
-    return Task.FromResult(0);
+    return 0;
 });
 
-var traceCommand = new Command("trace", "所属と継承を追跡する");
+var traceCommand = new Command("trace", "所属と呼び出しを追跡する");
 var depthOption = new Option<int>("--depth") { DefaultValueFactory = _ => 2 };
+var relOption = new Option<string?>("--rel")
+{
+    Description = "関係種別。カンマ区切り。空なら全部"
+};
+var traceLimitOption = new Option<int>("--limit")
+{
+    Description = "ノード数の上限",
+    DefaultValueFactory = _ => Melore.Core.Search.TraceService.DefaultLimit
+};
 traceCommand.Options.Add(configOption);
 traceCommand.Options.Add(depthOption);
+traceCommand.Options.Add(traceLimitOption);
+traceCommand.Options.Add(relOption);
 traceCommand.Arguments.Add(targetArgument);
 traceCommand.SetAction((parse, _) =>
 {
     var settings = SettingsLoader.Load(parse.GetRequiredValue(configOption));
     using var host = CreateRuntime(settings);
-    var result = host.Trace.Trace(parse.GetRequiredValue(targetArgument), parse.GetValue(depthOption));
+    var rel = parse.GetValue(relOption);
+    var relTypes = string.IsNullOrWhiteSpace(rel)
+        ? null
+        : rel.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    var result = host.Trace.Trace(
+        parse.GetRequiredValue(targetArgument),
+        parse.GetValue(depthOption),
+        parse.GetValue(traceLimitOption),
+        relTypes);
     if (result.Root is null)
     {
         Console.WriteLine(result.Limitation);
         return Task.FromResult(1);
     }
 
-    Console.WriteLine($"root\t{result.Root.Title}\t{result.Root.Source.Path}:{result.Root.Source.StartLine}");
+    Console.WriteLine($"root\t{result.Root.Name}\t{result.Root.Path}:{result.Root.StartLine}");
+    var byId = result.Nodes.ToDictionary(n => n.Id);
     foreach (var edge in result.Edges)
     {
-        var from = result.Nodes.First(n => n.Id == edge.FromId).Title;
-        var to = result.Nodes.First(n => n.Id == edge.ToId).Title;
+        var from = byId[edge.FromId].Name;
+        var to = byId[edge.ToId].Name;
         Console.WriteLine($"{edge.Basis}\t{edge.RelType}\t{from} -> {to}");
     }
 
@@ -126,6 +150,7 @@ explainCommand.SetAction(async (parse, ct) =>
     var query = parse.GetRequiredValue(queryArgument);
     var limit = parse.GetValue(limitOption);
     await using var host = CreateRuntime(settings);
+    await host.Indexer.EnsureFreshAsync(settings, ct).ConfigureAwait(false);
     var result = await host.Explain.ExplainAsync(query, limit, ct).ConfigureAwait(false);
     Console.WriteLine(result.Answer);
     if (result.Limitation is not null)
@@ -151,23 +176,14 @@ evalCommand.SetAction(async (parse, ct) =>
     var settings = SettingsLoader.Load(parse.GetRequiredValue(configOption));
     var limit = parse.GetValue(limitOption);
     await using var host = CreateRuntime(settings);
-    var report = await new Melore.Core.Evaluation.EvalService(host.Search)
+    var bundle = await new Melore.Core.Evaluation.EvalService(host.Search)
         .RunAsync(limit, ct)
         .ConfigureAwait(false);
-    Console.WriteLine($"hit_at_{report.Limit}\t{report.HitAtK:0.000}");
-    foreach (var row in report.Rows)
-    {
-        Console.WriteLine($"{row.Id}\t{(row.Hit ? "HIT" : "MISS")}\t{row.Query}");
-        if (!row.Hit)
-        {
-            foreach (var path in row.Paths.Take(8))
-            {
-                Console.WriteLine($"  {path}");
-            }
-        }
-    }
-
-    return report.HitAtK >= 0.9 ? 0 : 1;
+    PrintEval(bundle.Dev);
+    PrintEval(bundle.Test);
+    var failed = bundle.Test.HitAt8 < Melore.Core.Evaluation.EvalService.TestHitAt8Threshold
+                 || bundle.Test.HitAt1 < Melore.Core.Evaluation.EvalService.TestHitAt1Threshold;
+    return failed ? 1 : 0;
 });
 
 var root = new RootCommand("Melore — ローカル仕様インデックス");
@@ -200,4 +216,23 @@ static void PrintStatus(IndexStatus status)
     Console.WriteLine($"vector\t{status.VectorSearchEnabled}");
     Console.WriteLine($"embeddings\t{status.EmbeddingEnabled}");
     Console.WriteLine($"updated_at\t{status.UpdatedAtUtc?.ToString("O") ?? "(none)"}");
+    Console.WriteLine($"mcp_invocations\t{status.McpInvocationCount}");
+    Console.WriteLine($"mcp_last_at\t{status.LastMcpInvocationUtc?.ToString("O") ?? "(none)"}");
+}
+
+static void PrintEval(Melore.Core.Evaluation.EvalReport report)
+{
+    Console.WriteLine($"{report.Name}\thit_at_1\t{report.HitAt1:0.000}");
+    Console.WriteLine($"{report.Name}\thit_at_8\t{report.HitAt8:0.000}");
+    foreach (var row in report.Rows)
+    {
+        Console.WriteLine($"{report.Name}\t{row.Id}\t{(row.HitAt8 ? "HIT" : "MISS")}\t{row.Query}");
+        if (!row.HitAt8)
+        {
+            foreach (var path in row.Paths.Take(8))
+            {
+                Console.WriteLine($"  {path}");
+            }
+        }
+    }
 }

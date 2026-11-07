@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Melore.Core.Models;
 using Melore.Core.Ports;
 using Microsoft.CodeAnalysis;
@@ -12,7 +13,7 @@ namespace Melore.Parsing.Roslyn;
 public sealed class RoslynSyntaxAnalyzer : ICodeAnalyzer
 {
     /// <inheritdoc />
-    public string AnalyzerVersion => "roslyn-syntax:2";
+    public string AnalyzerVersion => "roslyn-syntax:3";
 
     /// <inheritdoc />
     public IReadOnlyList<ParsedSymbol> AnalyzeFile(string relativePath, string content)
@@ -160,7 +161,7 @@ public sealed class RoslynSyntaxAnalyzer : ICodeAnalyzer
             AccessibilityOf(node),
             span.StartLinePosition.Line + 1,
             span.EndLinePosition.Line + 1,
-            XmlDoc(node),
+            SummaryAndRemarks(node),
             isTest,
             testFramework,
             baseTypeNames);
@@ -219,13 +220,34 @@ public sealed class RoslynSyntaxAnalyzer : ICodeAnalyzer
         return "private";
     }
 
-    private static string? XmlDoc(SyntaxNode node)
+    private static string? SummaryAndRemarks(SyntaxNode node)
     {
         var trivia = node.GetLeadingTrivia()
             .Select(t => t.GetStructure())
             .OfType<DocumentationCommentTriviaSyntax>()
             .FirstOrDefault();
-        return trivia?.ToString().Trim();
+        if (trivia is null)
+        {
+            return null;
+        }
+
+        var parts = new List<string>();
+        foreach (var element in trivia.Content.OfType<XmlElementSyntax>())
+        {
+            var tag = element.StartTag.Name.ToString();
+            if (tag is not ("summary" or "remarks"))
+            {
+                continue;
+            }
+
+            var text = Regex.Replace(element.Content.ToString(), @"\s+", " ").Trim();
+            if (text.Length > 0)
+            {
+                parts.Add(text);
+            }
+        }
+
+        return parts.Count == 0 ? null : string.Join('\n', parts);
     }
 
     private static (bool IsTest, string? Framework) DetectTest(MethodDeclarationSyntax method)

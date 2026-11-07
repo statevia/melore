@@ -4,57 +4,102 @@ using Melore.Core.Ports;
 namespace Melore.Core.Search;
 
 /// <summary>
-/// 所属・継承を depth 制限付きでたどる。呼び出し関係は未抽出。
+/// 所属・継承・解決済み呼び出しを depth と応答サイズで切ってたどる。
 /// </summary>
 /// <param name="store">索引。</param>
 public sealed class TraceService(IMeloreStore store)
 {
+    /// <summary>既定のノード数。</summary>
+    public const int DefaultLimit = 64;
+
+    /// <summary>ノードと辺の概算文字数の上限。</summary>
+    public const int MaxResponseChars = 8000;
+
     /// <summary>
     /// FQN または ID からグラフを作る。
     /// </summary>
-    public TraceResult Trace(string idOrFqn, int depth)
+    public TraceResult Trace(
+        string idOrFqn,
+        int depth,
+        int limit = DefaultLimit,
+        IReadOnlyCollection<string>? relTypes = null)
     {
         store.Initialize();
         var key = idOrFqn.Trim();
-        var cap = Math.Clamp(depth, 1, 6);
-        var root = store.GetHitById(key) ?? store.FindSymbols(key, 1).FirstOrDefault();
-        if (root is null)
+        var capDepth = Math.Clamp(depth, 1, 6);
+        var capNodes = Math.Clamp(limit, 1, 256);
+        var allowed = relTypes is null || relTypes.Count == 0
+            ? null
+            : new HashSet<string>(relTypes, StringComparer.OrdinalIgnoreCase);
+        var rootHit = store.GetHitById(key) ?? store.FindSymbols(key, 1).FirstOrDefault();
+        if (rootHit is null)
         {
             return new TraceResult(null, [], [], "指定したシンボルが見つかりません。");
         }
 
-        var nodes = new Dictionary<string, SearchHit>(StringComparer.Ordinal) { [root.Id] = root };
+        var root = ToNode(rootHit);
+        var nodes = new Dictionary<string, TraceNode>(StringComparer.Ordinal) { [root.Id] = root };
         var edges = new List<TraceEdge>();
-        var queue = new Queue<(SearchHit Hit, int Depth)>();
-        queue.Enqueue((root, 0));
+        var queue = new Queue<(string Id, int Depth)>();
+        queue.Enqueue((root.Id, 0));
+        var chars = Size(root);
+        var truncated = false;
 
         while (queue.Count > 0)
         {
-            var (current, currentDepth) = queue.Dequeue();
-            if (currentDepth >= cap)
+            var (currentId, currentDepth) = queue.Dequeue();
+            if (currentDepth >= capDepth)
             {
                 continue;
             }
 
-            var related = store.GetStoredRelationships(current.Id)
-                .Concat(store.GetDeclaredMembers(current.Title))
+            var current = nodes[currentId];
+            var related = store.GetStoredRelationships(currentId)
+                .Concat(store.GetDeclaredMembers(current.Name))
                 .ToList();
             foreach (var item in related)
             {
-                edges.Add(new TraceEdge(current.Id, item.Hit.Id, item.RelType, item.Basis));
-                if (nodes.TryAdd(item.Hit.Id, item.Hit))
+                if (allowed is not null && !allowed.Contains(item.RelType))
                 {
-                    queue.Enqueue((item.Hit, currentDepth + 1));
+                    continue;
+                }
+
+                var next = ToNode(item.Hit);
+                var isNew = !nodes.ContainsKey(next.Id);
+                var addChars = item.RelType.Length + next.Id.Length + currentId.Length + 16 + (isNew ? Size(next) : 0);
+                if (isNew && (nodes.Count >= capNodes || chars + addChars > MaxResponseChars))
+                {
+                    truncated = true;
+                    continue;
+                }
+
+                edges.Add(new TraceEdge(currentId, next.Id, item.RelType, item.Basis));
+                chars += addChars;
+                if (isNew)
+                {
+                    nodes.Add(next.Id, next);
+                    queue.Enqueue((next.Id, currentDepth + 1));
                 }
             }
         }
 
-        return new TraceResult(
-            root,
-            nodes.Values.ToList(),
-            Deduplicate(edges),
-            "呼び出し関係（calls）は構文解析のみのため未抽出です。所属（declares）と基底型名（inherits, inferred）を返します。");
+        string? limitation = store.CountRelationships("calls", null) == 0
+            ? "呼び出し関係（calls）は未抽出です。所属（declares）と基底型名（inherits, inferred）を返します。"
+            : null;
+        if (truncated)
+        {
+            const string note = "応答上限で打ち切りました。";
+            limitation = limitation is null ? note : limitation + note;
+        }
+
+        return new TraceResult(root, nodes.Values.ToList(), Deduplicate(edges), limitation);
     }
+
+    private static TraceNode ToNode(SearchHit hit)
+        => new(hit.Id, hit.Kind.ToString(), hit.Title, hit.Source.Path, hit.Source.StartLine, hit.Source.EndLine);
+
+    private static int Size(TraceNode node)
+        => node.Id.Length + node.Kind.Length + node.Name.Length + node.Path.Length + 24;
 
     private static IReadOnlyList<TraceEdge> Deduplicate(IReadOnlyList<TraceEdge> edges)
         => edges

@@ -4,7 +4,7 @@
 | --- | --- |
 | 種別 | Architecture |
 | Version | 0.1 |
-| 更新日 | 2026-11-02 |
+| 更新日 | 2026-11-06 |
 
 永続化は SQLite 1 ファイル。ベクトルは `sqlite-vec` の仮想テーブルに分離する。
 
@@ -149,7 +149,23 @@ Markdown ファイル単位のメタ。
 | dim | 1024 |
 | embedding | `vec0` 仮想テーブル側 |
 
-シンボルのベクトル化テキストは `kind + fqn + signature + xml doc + 先頭付近のソース抜粋` とする。メソッド本体全文は埋め込まない（トークンとノイズの抑制）。
+シンボルのベクトル化テキストは型名と `<summary>` / `<remarks>` とする。メソッド本体全文は埋め込まない。テストメソッドは埋め込み対象にしない。
+
+### mcp_invocations
+
+MCP ツール（`search` / `references` / `trace` / `explain`）の引数と応答。知識の検索対象にはしない。CLI は書かない。
+
+| 列 | 内容 |
+| --- | --- |
+| id | TEXT PK |
+| created_at | ISO-8601 |
+| tool | ツール名 |
+| arguments_json | エージェントが渡した引数 |
+| response_json | クライアントへ返した JSON。256 KiB で切る |
+| response_chars | 切る前の文字数 |
+| duration_ms | 所要時間 |
+| success | 1 または 0 |
+| error | 失敗時のメッセージ |
 
 ### fts
 

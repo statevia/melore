@@ -11,6 +11,8 @@ namespace Melore.Contracts;
 /// <param name="VectorSearchEnabled">ベクトル索引が利用可能か。</param>
 /// <param name="EmbeddingEnabled">Embedding 生成が利用可能か。</param>
 /// <param name="UpdatedAtUtc">最終更新（UTC）。</param>
+/// <param name="McpInvocationCount">MCP ツールを呼んだ回数。</param>
+/// <param name="LastMcpInvocationUtc">最後に MCP ツールを呼んだ時刻（UTC）。</param>
 public sealed record IndexStatus(
     string RepositoryName,
     string? IndexedRevision,
@@ -19,4 +21,6 @@ public sealed record IndexStatus(
     int TestCount,
     bool VectorSearchEnabled,
     bool EmbeddingEnabled,
-    DateTimeOffset? UpdatedAtUtc);
+    DateTimeOffset? UpdatedAtUtc,
+    int McpInvocationCount = 0,
+    DateTimeOffset? LastMcpInvocationUtc = null);

@@ -105,6 +105,18 @@ public interface IMeloreStore : IDisposable
 
     /// <summary>関係件数。basis は explicit / inferred。null なら種別全体。</summary>
     int CountRelationships(string relType, string? basis);
+
+    /// <summary>FQN 一致のシンボル ID。無ければ null。</summary>
+    string? FindSymbolIdByFqn(string fqn);
+
+    /// <summary>MCP ツール呼び出しを 1 件残す。応答が長ければ切る。</summary>
+    void RecordMcpInvocation(
+        string tool,
+        string argumentsJson,
+        string responseJson,
+        int durationMs,
+        bool success,
+        string? error);
 }
 
 /// <summary>

@@ -27,16 +27,7 @@ public sealed class GitWorkspace(MeloreSettings settings) : IGitWorkspace
     public async Task<IReadOnlyList<RepositoryFile>> ListFilesAsync(CancellationToken cancellationToken)
     {
         var root = Path.GetFullPath(settings.RepositoryPath);
-        var matcher = new Matcher(StringComparison.OrdinalIgnoreCase);
-        foreach (var include in settings.Include)
-        {
-            matcher.AddInclude(include.Replace('\\', '/'));
-        }
-
-        foreach (var exclude in settings.Exclude)
-        {
-            matcher.AddExclude(exclude.Replace('\\', '/'));
-        }
+        var matcher = CreateMatcher();
 
         var matches = matcher.Execute(new DirectoryInfoWrapper(new DirectoryInfo(root)));
         var relatives = new List<(string Relative, string Full, string Language)>();
@@ -121,6 +112,87 @@ public sealed class GitWorkspace(MeloreSettings settings) : IGitWorkspace
 
         return list;
     }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<WorktreeChange>> ListWorktreeChangesAsync(CancellationToken cancellationToken)
+    {
+        var (exit, stdout, _) = await RunGitAsync(
+                ["status", "--porcelain", "--untracked-files=all"],
+                stdin: null,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (exit != 0 || stdout.Length == 0)
+        {
+            return [];
+        }
+
+        var list = new List<WorktreeChange>();
+        foreach (var change in GitStatusParser.Parse(stdout))
+        {
+            if (IsIncluded(change.RelativePath))
+            {
+                list.Add(change);
+            }
+        }
+
+        return list;
+    }
+
+    /// <inheritdoc />
+    public async Task<RepositoryFile?> TryReadFileAsync(string relativePath, CancellationToken cancellationToken)
+    {
+        var relative = relativePath.Replace('\\', '/');
+        if (!IsIncluded(relative))
+        {
+            return null;
+        }
+
+        var root = Path.GetFullPath(settings.RepositoryPath);
+        var full = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
+        if (!File.Exists(full))
+        {
+            return null;
+        }
+
+        var language = Path.GetExtension(relative).ToLowerInvariant() switch
+        {
+            ".md" => "markdown",
+            ".cs" => "csharp",
+            _ => null
+        };
+        if (language is null)
+        {
+            return null;
+        }
+
+        var hashes = await HashWorkingTreeAsync([relative], cancellationToken).ConfigureAwait(false);
+        if (!hashes.TryGetValue(relative, out var sha))
+        {
+            var bytes = await File.ReadAllBytesAsync(full, cancellationToken).ConfigureAwait(false);
+            sha = "sha256:" + Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        }
+
+        return new RepositoryFile(relative, full, sha, language);
+    }
+
+    private Matcher CreateMatcher()
+    {
+        var matcher = new Matcher(StringComparison.OrdinalIgnoreCase);
+        foreach (var include in settings.Include)
+        {
+            matcher.AddInclude(include.Replace('\\', '/'));
+        }
+
+        foreach (var exclude in settings.Exclude)
+        {
+            matcher.AddExclude(exclude.Replace('\\', '/'));
+        }
+
+        return matcher;
+    }
+
+    private bool IsIncluded(string relativePath)
+        => CreateMatcher().Match(relativePath.Replace('\\', '/')).HasMatches;
 
     private async Task<Dictionary<string, string>> HashWorkingTreeAsync(
         IReadOnlyList<string> relativePaths,

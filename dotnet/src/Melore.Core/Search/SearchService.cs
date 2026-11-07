@@ -26,9 +26,10 @@ public sealed class SearchService(IMeloreStore store, IEmbeddingClient embedding
             return [];
         }
 
+        var pool = Math.Clamp(limit * 4, limit, 32);
         var variants = QueryNormalizer.Expand(trimmed);
-        var ftsLists = variants.Select(v => store.SearchFullText(v, limit)).ToList();
-        var symbolLists = variants.Select(v => store.SearchSymbols(v, limit)).ToList();
+        var ftsLists = variants.Select(v => store.SearchFullText(v, pool)).ToList();
+        var symbolLists = variants.Select(v => store.SearchSymbols(v, pool)).ToList();
         IReadOnlyList<SearchHit> vectors = [];
         if (embeddings.IsAvailable && store.VectorSearchEnabled)
         {
@@ -36,7 +37,7 @@ public sealed class SearchService(IMeloreStore store, IEmbeddingClient embedding
                 .ConfigureAwait(false);
             if (vector is { Length: > 0 })
             {
-                vectors = store.SearchVectors(vector, limit);
+                vectors = store.SearchVectors(vector, pool);
             }
         }
 
@@ -44,8 +45,9 @@ public sealed class SearchService(IMeloreStore store, IEmbeddingClient embedding
         ranked.AddRange(ftsLists);
         ranked.AddRange(symbolLists);
         ranked.Add(vectors);
-        var merged = ReciprocalRankFusion.Merge(ranked, limit);
-        return reranker.Rerank(trimmed, merged, limit);
+        var merged = ReciprocalRankFusion.Merge(ranked, pool);
+        var reranked = reranker.Rerank(trimmed, merged, pool);
+        return TestRankDemoter.Apply(trimmed, reranked).Take(limit).ToList();
     }
 
     /// <summary>索引の状態。</summary>

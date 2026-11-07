@@ -1,9 +1,11 @@
 using Melore.Core.Ports;
+using Melore.Mcp;
 using Melore.Host;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
+McpJson.UseRelaxedUnicode();
 var settings = SettingsLoader.LoadFromArgs(args);
 var builder = Host.CreateApplicationBuilder();
 builder.Logging.AddConsole(options =>
@@ -17,6 +19,7 @@ builder.Services.AddSingleton(sp => sp.GetRequiredService<MeloreRuntime>().Searc
 builder.Services.AddSingleton(sp => sp.GetRequiredService<MeloreRuntime>().References);
 builder.Services.AddSingleton(sp => sp.GetRequiredService<MeloreRuntime>().Trace);
 builder.Services.AddSingleton(sp => sp.GetRequiredService<MeloreRuntime>().Explain);
+builder.Services.AddSingleton(sp => sp.GetRequiredService<MeloreRuntime>().Indexer);
 builder.Services.AddSingleton<IMeloreStore>(sp => sp.GetRequiredService<MeloreRuntime>().Store);
 builder.Services
     .AddMcpServer()
