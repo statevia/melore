@@ -27,12 +27,14 @@ public sealed class EvalServiceTests
         var eval = new EvalService(new SearchService(store, new Melore.Core.Ports.NullEmbeddingClient(), new NoOpReranker()));
 
         // Act
-        var report = await eval.RunAsync(8, CancellationToken.None);
+        var bundle = await eval.RunAsync(8, CancellationToken.None);
 
         // Assert
-        Assert.Equal(0, report.HitAtK);
-        Assert.Equal(15, report.Rows.Count);
-        Assert.All(report.Rows, r => Assert.False(r.Hit));
+        Assert.Equal(0, bundle.Dev.HitAt8);
+        Assert.Equal(0, bundle.Test.HitAt1);
+        Assert.Equal(15, bundle.Dev.Rows.Count);
+        Assert.Equal(27, bundle.Test.Rows.Count);
+        Assert.All(bundle.Dev.Rows, r => Assert.False(r.HitAt8));
     }
 
     /// <summary>Q1 用チャンクがあればその行は HIT。</summary>
@@ -56,9 +58,19 @@ public sealed class EvalServiceTests
         var eval = new EvalService(new SearchService(store, new Melore.Core.Ports.NullEmbeddingClient(), new NoOpReranker()));
 
         // Act
-        var report = await eval.RunAsync(8, CancellationToken.None);
+        var bundle = await eval.RunAsync(8, CancellationToken.None);
 
         // Assert
-        Assert.True(report.Rows.Single(r => r.Id == "Q1").Hit);
+        Assert.True(bundle.Dev.Rows.Single(r => r.Id == "Q1").HitAt8);
+    }
+
+    /// <summary>検証用は 27 件で H12 を含まない。</summary>
+    [Fact]
+    public void HoldoutQueries_ExcludesUntrackedFixture()
+    {
+        // Assert
+        Assert.Equal(27, HoldoutQueries.All.Count);
+        Assert.DoesNotContain(HoldoutQueries.All, q => q.Id == "H12");
+        Assert.Equal(27, HoldoutQueries.All.Select(q => q.Id).Distinct().Count());
     }
 }

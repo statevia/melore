@@ -1,4 +1,5 @@
 using Melore.Contracts;
+using Melore.Core.Models;
 using Melore.Core.Ports;
 using Microsoft.Extensions.Logging;
 
@@ -13,14 +14,18 @@ namespace Melore.Core.Indexing;
 /// <param name="store">永続化。</param>
 /// <param name="embeddings">任意。利用不可ならベクトルは作らない。</param>
 /// <param name="logger">進捗ログ。</param>
+/// <param name="semantic">calls / implements。未設定なら構文解析のまま。</param>
 public sealed class IndexService(
     IGitWorkspace git,
     IDocumentParser documents,
     ICodeAnalyzer code,
     IMeloreStore store,
     IEmbeddingClient embeddings,
-    ILogger<IndexService> logger)
+    ILogger<IndexService> logger,
+    ISemanticGraphExtractor? semantic = null)
 {
+    /// <summary>検索の直前に自動で再索引する差分の上限。</summary>
+    public const int MaxAutoRefresh = 32;
     /// <summary>各解析器の版を合成した文字列。DB の前回値と比較して再構築する。</summary>
     public string AnalyzerVersions =>
         string.Join(';', documents.AnalyzerVersion, code.AnalyzerVersion, embeddings.AnalyzerVersion, RelationshipIndexer.AnalyzerVersion);
@@ -86,23 +91,12 @@ public sealed class IndexService(
                 continue;
             }
 
-            var text = await File.ReadAllTextAsync(file.FullPath, cancellationToken).ConfigureAwait(false);
-            var fileId = store.EnsureFile(file);
-            if (file.Language == "markdown")
-            {
-                var document = documents.Parse(file.RelativePath, text);
-                store.UpsertDocument(fileId, file, document, revision);
-            }
-            else if (file.Language == "csharp")
-            {
-                var symbols = code.AnalyzeFile(file.RelativePath, text);
-                store.UpsertSymbols(fileId, file, symbols, revision);
-            }
-
+            await IndexFileAsync(file, revision, cancellationToken).ConfigureAwait(false);
             parsed++;
         }
 
         var related = RelationshipIndexer.Rebuild(store);
+        await ApplySemanticGraphAsync(settings, cancellationToken).ConfigureAwait(false);
         if (embeddings.IsAvailable)
         {
             await EmbedMissingAsync(cancellationToken).ConfigureAwait(false);
@@ -118,6 +112,132 @@ public sealed class IndexService(
             analyzerChanged,
             revision);
         return store.GetStatus(settings.RepositoryName);
+    }
+
+    /// <summary>
+    /// 差分が上限以内ならそのファイルだけ索引し直す。
+    /// </summary>
+    public async Task<IndexFreshness> EnsureFreshAsync(MeloreSettings settings, CancellationToken cancellationToken)
+    {
+        store.Initialize();
+        var changes = await git.ListWorktreeChangesAsync(cancellationToken).ConfigureAwait(false);
+        if (changes.Count == 0)
+        {
+            return new IndexFreshness(false, 0, 0);
+        }
+
+        if (changes.Count > MaxAutoRefresh)
+        {
+            return new IndexFreshness(true, changes.Count, 0);
+        }
+
+        var revision = await git.GetHeadRevisionAsync(cancellationToken).ConfigureAwait(false);
+        var known = store.GetIndexedBlobShas();
+        var refreshed = 0;
+        foreach (var change in changes)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (change.Remove)
+            {
+                store.DeleteFile(change.RelativePath);
+                refreshed++;
+                continue;
+            }
+
+            var file = await git.TryReadFileAsync(change.RelativePath, cancellationToken).ConfigureAwait(false);
+            if (file is null)
+            {
+                store.DeleteFile(change.RelativePath);
+                refreshed++;
+                continue;
+            }
+
+            if (known.TryGetValue(file.RelativePath, out var sha) &&
+                string.Equals(sha, file.BlobSha, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            await IndexFileAsync(file, revision, cancellationToken).ConfigureAwait(false);
+            refreshed++;
+        }
+
+        if (refreshed > 0 && embeddings.IsAvailable)
+        {
+            await EmbedMissingAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (refreshed > 0)
+        {
+            store.CompleteIndex(settings.RepositoryName, settings.RepositoryPath, revision, AnalyzerVersions);
+        }
+
+        return new IndexFreshness(false, changes.Count, refreshed);
+    }
+
+    private async Task IndexFileAsync(RepositoryFile file, string? revision, CancellationToken cancellationToken)
+    {
+        var text = await File.ReadAllTextAsync(file.FullPath, cancellationToken).ConfigureAwait(false);
+        var fileId = store.EnsureFile(file);
+        if (file.Language == "markdown")
+        {
+            var document = documents.Parse(file.RelativePath, text);
+            store.UpsertDocument(fileId, file, document, revision);
+        }
+        else if (file.Language == "csharp")
+        {
+            var symbols = code.AnalyzeFile(file.RelativePath, text);
+            store.UpsertSymbols(fileId, file, symbols, revision);
+        }
+    }
+
+    private async Task ApplySemanticGraphAsync(MeloreSettings settings, CancellationToken cancellationToken)
+    {
+        if (semantic is null || string.IsNullOrWhiteSpace(settings.SolutionPath))
+        {
+            return;
+        }
+
+        var full = Path.IsPathRooted(settings.SolutionPath)
+            ? settings.SolutionPath
+            : Path.Combine(settings.RepositoryPath, settings.SolutionPath);
+        if (!File.Exists(full))
+        {
+            return;
+        }
+
+        IReadOnlyList<SemanticRelation> edges;
+        try
+        {
+            edges = await semantic.ExtractAsync(full, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Semantic graph was skipped for {Solution}", full);
+            return;
+        }
+
+        store.DeleteRelationshipsByType("calls");
+        store.DeleteRelationshipsByType("implements");
+        foreach (var edge in edges.DistinctBy(e => e.FromFqn + "\t" + e.ToFqn + "\t" + e.RelType))
+        {
+            var fromId = store.FindSymbolIdByFqn(edge.FromFqn);
+            var toId = store.FindSymbolIdByFqn(edge.ToFqn);
+            if (fromId is null || toId is null)
+            {
+                continue;
+            }
+
+            store.AddRelationship(
+                "symbol",
+                fromId,
+                "symbol",
+                toId,
+                edge.RelType,
+                RelationshipBasis.Explicit,
+                1.0,
+                edge.ToFqn);
+        }
     }
 
     private async Task EmbedMissingAsync(CancellationToken cancellationToken)

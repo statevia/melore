@@ -52,6 +52,7 @@ public sealed class ExplainTests
         Assert.False(result.ChatUsed);
         Assert.NotEmpty(result.EvidenceIds);
         Assert.Contains(result.Evidence, h => h.Path.Contains("fork-join.md", StringComparison.Ordinal));
+        Assert.All(result.Evidence, h => Assert.Null(h.Body));
     }
 
     /// <summary>プロンプトは検索上位の本文だけを含み、索引外テキストを入れない。</summary>

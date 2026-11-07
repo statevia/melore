@@ -38,6 +38,8 @@ dotnet publish src/Melore.Mcp -c Release
 
 ## CLI
 
+全コマンド・オプション・出力は [`docs/guides/cli.md`](docs/guides/cli.md)。
+
 ```powershell
 cd dotnet
 ..\artifacts\melore\melore.exe index --config ..\melore.json

@@ -74,7 +74,7 @@ public sealed partial class SqliteMeloreStore
             JOIN repositories r ON r.id = f.repository_id
             WHERE f.repository_id = $repo AND f.is_deleted = 0
               AND s.containing_type_fqn = $fqn
-            LIMIT 64;
+            LIMIT 256;
             """;
         cmd.Parameters.AddWithValue("$repo", RepositoryId);
         cmd.Parameters.AddWithValue("$fqn", typeFqn);
@@ -128,7 +128,7 @@ public sealed partial class SqliteMeloreStore
             SELECT rel_type, basis, from_id, to_id, from_kind, to_kind
             FROM relationships
             WHERE from_id = $id OR to_id = $id
-            LIMIT 64;
+            LIMIT 256;
             """;
         cmd.Parameters.AddWithValue("$id", fromId);
         using var reader = cmd.ExecuteReader();

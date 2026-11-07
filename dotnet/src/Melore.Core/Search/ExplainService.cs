@@ -28,7 +28,7 @@ public sealed class ExplainService(
         var cap = Math.Clamp(limit, 1, ExplainPromptBuilder.DefaultEvidenceLimit);
         var hits = await search.SearchAsync(query, cap, cancellationToken).ConfigureAwait(false);
         var evidenceHits = hits
-            .Select(h => HitFormatter.ToDetail(store, h, includeBody: true))
+            .Select(h => HitFormatter.ToDetail(store, h, includeBody: false))
             .ToList();
 
         if (evidenceHits.Count == 0)
@@ -43,15 +43,15 @@ public sealed class ExplainService(
                 Limitation: "検索ヒットが無い");
         }
 
-        var chunks = evidenceHits.Select(h => new ExplainEvidence(
+        var chunks = hits.Select(h => new ExplainEvidence(
             h.Id,
-            h.Kind,
+            h.Kind.ToString(),
             h.Title,
-            h.Path,
-            h.StartLine,
-            h.EndLine,
-            h.Body ?? h.Snippet,
-            h.Basis)).ToList();
+            h.Source.Path,
+            h.Source.StartLine,
+            h.Source.EndLine,
+            store.GetBody(h.Id) ?? h.Snippet,
+            Basis: null)).ToList();
         var (userPrompt, evidenceIds) = ExplainPromptBuilder.BuildUserPrompt(query, chunks);
         log.LogInformation(
             "explain evidence_ids={Ids} chat_available={Available}",

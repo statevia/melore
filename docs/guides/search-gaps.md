@@ -4,7 +4,7 @@
 | --- | --- |
 | 種別 | Guide |
 | Version | 0.1 |
-| 更新日 | 2026-11-03 |
+| 更新日 | 2026-11-06 |
 
 Phase 4 で測った FTS / 統合検索のギャップ。コーパスは Statevia。ゴールデンの実行は `melore eval`。
 
@@ -20,6 +20,9 @@ Phase 4 で測った FTS / 統合検索のギャップ。コーパスは Statevi
 | 未コミット編集が skip される | `git hash-object --stdin-paths` で作業ツリー SHA |
 | リネームで再解析が走る | `git diff -M` + `RelocateFile` |
 | analyzer 変更後に古いベクトルが残る | 版不一致で `ClearEmbeddings` と全再解析 |
+| 型の XML 全文が埋め込みを薄める | 型名 + summary + remarks だけを埋める |
+| テストが実装より上に来る | クエリにテスト語が無いときはテストパスを後ろへ下げる |
+| 未追跡ファイルが HEAD と同じだと古い | `search` の前に porcelain 差分を見て、32 件まで再索引する |
 
 ## 2. まだ入れないもの
 
@@ -32,6 +35,6 @@ Phase 4 で測った FTS / 統合検索のギャップ。コーパスは Statevi
 
 ## 3. ゴールデンとの対応
 
-`docs/evaluation.md` の Q1–Q15 を、検索文字列だけ短くしたものが `GoldenQueries`。期待パスの OR は表と同じ。Hit@8 ≥ 0.9 は `melore eval` の終了コードで見る。
+`docs/evaluation.md` の Q1–Q15 を、検索文字列だけ短くしたものが `GoldenQueries`（dev）。検証用の自然文は `HoldoutQueries`（test、H12 を除く）。`melore eval` は両方を出し、test の Hit@8 が 0.93 未満、または Hit@1 が 0.65 未満なら終了コード 1。検証用の失敗をシノニム表へは足さない。
 
 2026-11-03、既存 Statevia 索引に対する `melore eval` は Hit@8 = 1.000（15/15）。`specifies` / `tested_by` の再構築は analyzer `rel:1` のため、次の `melore index` で入る。

@@ -102,10 +102,18 @@ public sealed class MarkdownDocumentParser : IDocumentParser
     }
 
     private static List<string> SplitLines(string content)
-        => content.Replace("\r\n", "\n", StringComparison.Ordinal)
+    {
+        var lines = content.Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n')
             .Split('\n')
             .ToList();
+        if (lines.Count > 0 && lines[^1].Length == 0)
+        {
+            lines.RemoveAt(lines.Count - 1);
+        }
+
+        return lines;
+    }
 
     private static string BuildHeadingPath(string?[] headings, string relativePath)
     {

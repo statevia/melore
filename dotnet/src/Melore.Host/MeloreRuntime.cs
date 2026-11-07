@@ -117,7 +117,8 @@ public sealed class MeloreRuntime : IAsyncDisposable, IDisposable
             new RoslynSyntaxAnalyzer(),
             store,
             embeddings,
-            loggers.CreateLogger<IndexService>());
+            loggers.CreateLogger<IndexService>(),
+            new RoslynSemanticGraph());
         var search = new SearchService(store, embeddings, new NoOpReranker());
         var explain = new ExplainService(
             search,

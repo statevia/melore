@@ -348,29 +348,125 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
             WHERE r.id = $id;
             """;
         cmd.Parameters.AddWithValue("$id", RepositoryId);
-        using var reader = cmd.ExecuteReader();
-        if (!reader.Read())
+        string? revision = null;
+        DateTimeOffset? updated = null;
+        int chunks = 0;
+        int symbols = 0;
+        int tests = 0;
+        var found = false;
+        using (var reader = cmd.ExecuteReader())
+        {
+            if (reader.Read())
+            {
+                found = true;
+                revision = reader.IsDBNull(0) ? null : reader.GetString(0);
+                if (!reader.IsDBNull(1) &&
+                    DateTimeOffset.TryParse(reader.GetString(1), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed))
+                {
+                    updated = parsed;
+                }
+
+                chunks = reader.GetInt32(2);
+                symbols = reader.GetInt32(3);
+                tests = reader.GetInt32(4);
+            }
+        }
+
+        if (!found)
         {
             return new IndexStatus(repositoryName, null, 0, 0, 0, VectorSearchEnabled, false, null);
         }
 
-        var revision = reader.IsDBNull(0) ? null : reader.GetString(0);
-        DateTimeOffset? updated = null;
-        if (!reader.IsDBNull(1) &&
-            DateTimeOffset.TryParse(reader.GetString(1), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed))
-        {
-            updated = parsed;
-        }
-
+        var (invocations, lastInvocation) = ReadInvocationStats();
         return new IndexStatus(
             repositoryName,
             revision,
-            reader.GetInt32(2),
-            reader.GetInt32(3),
-            reader.GetInt32(4),
+            chunks,
+            symbols,
+            tests,
             VectorSearchEnabled,
             HasAnyEmbedding(),
-            updated);
+            updated,
+            invocations,
+            lastInvocation);
+    }
+
+    /// <inheritdoc />
+    public string? FindSymbolIdByFqn(string fqn)
+    {
+        EnsureRepository();
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT s.id
+            FROM symbols s
+            JOIN files f ON f.id = s.file_id
+            WHERE f.repository_id = $repo AND f.is_deleted = 0 AND s.fqn = $fqn
+            LIMIT 1;
+            """;
+        cmd.Parameters.AddWithValue("$repo", RepositoryId);
+        cmd.Parameters.AddWithValue("$fqn", fqn);
+        return cmd.ExecuteScalar() as string;
+    }
+
+    /// <inheritdoc />
+    public void RecordMcpInvocation(
+        string tool,
+        string argumentsJson,
+        string responseJson,
+        int durationMs,
+        bool success,
+        string? error)
+    {
+        Initialize();
+        const int maxChars = 256 * 1024;
+        var responseChars = responseJson.Length;
+        if (argumentsJson.Length > maxChars)
+        {
+            argumentsJson = argumentsJson[..maxChars];
+        }
+
+        if (responseJson.Length > maxChars)
+        {
+            responseJson = responseJson[..maxChars];
+        }
+
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO mcp_invocations
+                (id, created_at, tool, arguments_json, response_json, response_chars, duration_ms, success, error)
+            VALUES
+                ($id, $at, $tool, $args, $response, $chars, $ms, $ok, $error);
+            """;
+        cmd.Parameters.AddWithValue("$id", Ids.New());
+        cmd.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
+        cmd.Parameters.AddWithValue("$tool", tool);
+        cmd.Parameters.AddWithValue("$args", argumentsJson);
+        cmd.Parameters.AddWithValue("$response", responseJson);
+        cmd.Parameters.AddWithValue("$chars", responseChars);
+        cmd.Parameters.AddWithValue("$ms", durationMs);
+        cmd.Parameters.AddWithValue("$ok", success ? 1 : 0);
+        cmd.Parameters.AddWithValue("$error", (object?)error ?? DBNull.Value);
+        cmd.ExecuteNonQuery();
+    }
+
+    private (int Count, DateTimeOffset? Last) ReadInvocationStats()
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*), MAX(created_at) FROM mcp_invocations;";
+        using var reader = cmd.ExecuteReader();
+        if (!reader.Read())
+        {
+            return (0, null);
+        }
+
+        DateTimeOffset? last = null;
+        if (!reader.IsDBNull(1) &&
+            DateTimeOffset.TryParse(reader.GetString(1), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed))
+        {
+            last = parsed;
+        }
+
+        return (reader.GetInt32(0), last);
     }
 
     /// <inheritdoc />
@@ -485,11 +581,12 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
         using (var cmd = _connection.CreateCommand())
         {
             cmd.CommandText = """
-                SELECT s.id, s.kind || ' ' || s.fqn || char(10) || COALESCE(s.documentation_comment, '')
+                SELECT s.id, s.name || char(10) || COALESCE(s.documentation_comment, '')
                 FROM symbols s
                 JOIN files f ON f.id = s.file_id
                 WHERE f.repository_id = $repo AND f.is_deleted = 0
-                  AND s.kind IN ('class', 'interface', 'method', 'record')
+                  AND s.kind IN ('class', 'interface', 'record', 'struct', 'method')
+                  AND NOT EXISTS (SELECT 1 FROM tests t WHERE t.symbol_id = s.id)
                   AND NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.chunk_id = s.id);
                 """;
             cmd.Parameters.AddWithValue("$repo", RepositoryId);
@@ -787,7 +884,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
     private static string Snippet(string text)
     {
         var flat = Regex.Replace(text, @"\s+", " ").Trim();
-        return flat.Length <= 400 ? flat : flat[..400] + "…";
+        return flat.Length <= 280 ? flat : flat[..280] + "…";
     }
 
     private static string Truncate(string text, int max)
@@ -904,6 +1001,17 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
             model TEXT NOT NULL,
             dim INTEGER NOT NULL,
             vector BLOB NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS mcp_invocations (
+            id TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL,
+            tool TEXT NOT NULL,
+            arguments_json TEXT NOT NULL,
+            response_json TEXT NOT NULL,
+            response_chars INTEGER NOT NULL,
+            duration_ms INTEGER NOT NULL,
+            success INTEGER NOT NULL,
+            error TEXT
         );
         """;
 
