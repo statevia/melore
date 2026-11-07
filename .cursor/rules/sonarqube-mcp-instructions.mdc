@@ -1,0 +1,15 @@
+---
+description: SonarQube MCP Server usage guidelines
+globs:
+alwaysApply: true
+---
+
+# SonarQube MCP Instructions
+
+詳細手順は `.cursor/skills/sonarqube-mcp-ops/SKILL.md` を使用する。
+
+## 常時原則
+
+- SonarQube を使う作業では、開始時に上記スキルを読み、定義された手順に従う。
+- プロジェクトキーは推測しない。
+- 修正直後の即時反映を前提にしない。

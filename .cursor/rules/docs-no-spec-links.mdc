@@ -1,0 +1,28 @@
+---
+description: docs/ から .spec/ 等の内部作業フォルダへのリンク禁止
+globs: docs/**
+alwaysApply: false
+---
+# docs 境界（内部 Spec へのリンク禁止）
+
+`.spec/specs/` は各自のローカルに置き、git 管理しない。`docs/` からリンクすると他の環境では切れる。
+
+## 常時原則
+
+- **`docs/` 配下の Markdown から `.spec/` へリンクしない**（相対・絶対・リポジトリ相対いずれも不可）。
+- 契約・説明の正本は `docs/` に書く。完了内容を `.spec/` に残したまま `docs/` から参照しない。
+
+## よい例 / 悪い例
+
+```markdown
+<!-- ❌ BAD: docs → .spec -->
+詳細は [search-rerank](../../.spec/specs/search-rerank/requirements.md)。
+
+<!-- ✅ GOOD: docs 内で完結、または docs 同士 -->
+検索結果は RRF で統合する。
+詳細は [overview.md](../architecture/overview.md) を参照。
+```
+
+## 逆方向
+
+- `.spec/` や設計メモから **`docs/` の正本へリンクするのは可**。

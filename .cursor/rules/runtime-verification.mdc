@@ -1,0 +1,36 @@
+---
+description: CLI / MCP の改修後は、編集したソースを dotnet run で実行して確認する
+globs: dotnet/src/**
+alwaysApply: false
+---
+
+# CLI / MCP 改修後の実機確認
+
+`artifacts/melore/melore.exe` と `artifacts/melore-mcp/melore-mcp.exe` は、直前に今回のソースから `dotnet publish` し直さない限り改修を含まない。接続中の MCP サーバーも、再接続するまで古いプロセスのままである。
+
+## 常時原則
+
+- サブコマンドの引数、終了コード、標準出力、MCP ツールの応答が変わる改修は、実際に実行してから完了とする。
+- 発行済みバイナリが古いことは、確認を省く理由にしない。確認は編集したソースに対する `dotnet run` で行う。
+- 解析・チャンク化・スキーマを変えたら、`index` をやり直してから確かめる。
+- 検索順位に効く改修は `eval` の結果を改修前後で比べる（`docs/evaluation.md`）。
+- MCP の改修では stdout がプロトコル以外で汚れていないことを確かめる。
+- ビルド失敗、`melore.json` 未作成、Ollama 未起動で確認できないときは、止まった理由を書いて完了扱いにしない。Ollama が無くても `index` と FTS・シンボルの `search` は確かめられる。
+
+## 手順
+
+`dotnet/` で、変更したサブコマンドを実行する。
+
+```powershell
+dotnet run --project src/Melore.Cli -- <subcommand> [options] --config ..\melore.json
+```
+
+MCP は次のコマンドで起動する。ログは stderr に出る。
+
+```powershell
+dotnet run --project src/Melore.Mcp -- --config ..\melore.json
+```
+
+Statevia 側の MCP 設定は `artifacts/melore-mcp/melore-mcp.exe` を起動する。改修を Statevia から使うには、発行してから MCP サーバーを再接続する。
+
+`dotnet publish` が失敗するときは、`melore-mcp.exe` を起動中のエージェント（Statevia 側の MCP 設定など）が実行ファイルをつかんでいないか確かめる。

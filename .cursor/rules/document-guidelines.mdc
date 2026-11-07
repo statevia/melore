@@ -1,0 +1,15 @@
+---
+description: Markdownドキュメント作成時のガイドライン（日本語化、markdownlint準拠）
+globs: **/*.md
+---
+# Markdown Guidelines
+
+詳細手順は `.cursor/skills/markdown-spec-authoring/SKILL.md` を使用する。
+
+## 常時原則
+
+1. Markdown 本文は日本語で記述する（テンプレート由来の英語見出しは維持可）。
+2. Markdown 編集後は `npx markdownlint-cli2 "<変更したファイルパス>"` を実行する。
+3. `.spec/specs/` の更新時は、上記スキルのテンプレート準拠手順を必ず適用する。
+4. **`docs/` から `.spec/` へリンクしない**（詳細: `.cursor/rules/docs-no-spec-links.mdc`）。
+5. **`docs/` を編集するときは** `.cursor/rules/docs-authoring.mdc` に従う（読者、実装を正、用語の統一）。

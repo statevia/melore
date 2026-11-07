@@ -13,3 +13,18 @@ melore.json
 .env
 .env.*
 !.env.example
+
+# Claude Code / Cursor: 個人の許可リストと worktree は共有しない。
+.claude/settings.local.json
+.claude/worktrees/
+
+# Serena: 作業ファイルは除外し、dotnet/ の project.yml だけ共有する。
+**/.serena/
+!/dotnet/.serena/
+/dotnet/.serena/*
+!/dotnet/.serena/project.yml
+
+# Spec: templates のみ共有する。specs / archive / reject はローカル。
+.spec/*
+!.spec/templates/
+!.spec/templates/**

@@ -21,7 +21,7 @@
 
 ## MCP
 
-このリポジトリを Cursor で開くと、[`.cursor/mcp.json`](.cursor/mcp.json) が Melore MCP を起動します。[`melore.json.example`](melore.json.example) を `melore.json` にコピーし、`repositoryPath` を対象リポジトリ（最初は [Statevia](https://github.com/statevia/statevia)）のクローン絶対パスにします。ツールは `search` / `references` / `trace` / `explain`。ログは stderr のみです。
+Melore MCP は対象リポジトリ側の MCP 設定から起動します。Statevia は同じ親フォルダの `../Melore` を相対パスで参照するので、Melore を隣に置いて発行してください。[`melore.json.example`](melore.json.example) を `melore.json` にコピーし、`repositoryPath` を対象リポジトリ（最初は [Statevia](https://github.com/statevia/statevia)）のクローン絶対パスにします。ツールは `search` / `references` / `trace` / `explain`。ログは stderr のみです。
 
 ## 開発
 

@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "serena-melore": {
+      "type": "http",
+      "url": "http://127.0.0.1:9123/mcp"
+    },
+    "sonarqube": {
+      "type": "http",
+      "url": "http://127.0.0.1:9124/mcp",
+      "headers": {
+        "Authorization": "Bearer ${SONARQUBE_TOKEN}",
+        "SONARQUBE_ORG": "statevia"
+      }
+    }
+  }
+}

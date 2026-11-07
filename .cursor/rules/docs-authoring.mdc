@@ -1,0 +1,18 @@
+---
+description: docs/ は Melore の開発者と AI エージェント向け。実装を正とし、用語と判断の置き場を守る
+globs: docs/**
+alwaysApply: false
+---
+# docs の読者と正本
+
+## 常時原則
+
+- **第一読者**は Melore を実装する開発者と AI エージェント（`docs/README.md`）。
+- **実装が正。** コードに無い振る舞いを現行の仕様として書かない。未実装は計画（`docs/guides/`）に置く。
+- **`AGENTS.md` を正本にしない。** `AGENTS.md` は薄い索引で、正本は `docs/`。
+- **Statevia の契約を書き写さない。** Statevia の知識体系は Statevia 側の `docs/` が正本。Melore はそれをインデックスする側である。
+- **用語は `docs/glossary.md` に合わせる。** 用語集に無い概念を足したときは、同じ PR で用語集にも足す。
+- **技術選定は `docs/decisions/README.md` に ADR で残す。** 採用・代替・制約をセットで書く。時点が効く事実には日付を書く。
+- **CLI のコマンド・オプション・出力を変えたら `docs/guides/cli.md` を同じ PR で直す。** MCP のツール契約を変えたら `docs/guides/mcp-tool-candidates.md` と `docs/evaluation.md` への影響も確かめる。
+- 触ったファイルは冒頭のメタ表（種別 / Version / 更新日）の更新日を直す。
+- 新しい文書を足したら `docs/README.md` の索引にも足す。
