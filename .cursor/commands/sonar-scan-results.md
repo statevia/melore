@@ -16,7 +16,7 @@ SonarQube のスキャン結果（Quality Gate / issue / カバレッジ）を�
 3. 現状把握（読み取りのみ）:
    - `get_project_quality_gate_status` で Quality Gate を取得。組み込み **Sonar way**（新規コードの信頼性・セキュリティ・保守性が A、Security Hotspot のレビュー 100%、カバレッジ 80% 以上、重複行 3% 以下）。
    - `search_sonar_issues_in_projects` で issue を取得（type = Bug / Vulnerability / Code Smell、Security Hotspot、severity、**new code を優先**）。
-   - `get_component_measures` で `coverage` / `new_coverage` / `duplicated_lines_density` 等の不足を確認する。CI はカバレッジを収集していないため、`coverage` が無いときはその旨を報告する。
+   - `get_component_measures` で `coverage` / `new_coverage` / `duplicated_lines_density` 等の不足を確認する。カバレッジは CI の `dotnet test` が `Code Coverage` コレクターで収集する。`.cursor/` と `.claude/` は解析対象外、2 つの `Program.cs` はカバレッジ対象外（`build.yml` の `begin` が正本）。
    - 必要に応じ `show_rule` でルールの趣旨・修正方針を確認する。
 4. トリアージ: **新規コード違反と Quality Gate を最優先**。重大度と誤検知の可能性で分類し、対応方針（修正 / テスト追加 / 抑制の妥当性）を簡潔に提示する。
 5. 是正:
