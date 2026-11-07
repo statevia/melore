@@ -1,0 +1,5 @@
+# 下記は .gitignore で無視されているが、Cursor のコードベースインデックスには含める。
+# 構文・制限: https://cursor.com/docs/reference/ignore-file
+
+!.spec/
+!.spec/**

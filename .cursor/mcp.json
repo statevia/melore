@@ -1,16 +1,27 @@
 {
   "mcpServers": {
-    "melore": {
-      "command": "dotnet",
+    "serena-melore": {
+      "type": "http",
+      "url": "http://127.0.0.1:9123/mcp"
+    },
+    "sonarqube": {
+      "url": "http://127.0.0.1:9124/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:SONARQUBE_TOKEN}",
+        "SONARQUBE_ORG": "statevia"
+      }
+    },
+    "github": {
+      "command": "docker",
       "args": [
         "run",
-        "--project",
-        "${workspaceFolder}/dotnet/src/Melore.Mcp/Melore.Mcp.csproj",
-        "--",
-        "--config",
-        "${workspaceFolder}/melore.json"
+        "-i",
+        "--rm",
+        "-e",
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "ghcr.io/github/github-mcp-server"
       ],
-      "cwd": "${workspaceFolder}/dotnet"
+      "env": {}
     }
   }
 }

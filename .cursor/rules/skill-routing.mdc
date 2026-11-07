@@ -1,0 +1,26 @@
+# ルールとスキルの分離ガイド
+
+常時守るべき原則はルールに残し、手順書はスキルを使う。
+
+## 常時ルールとして維持するもの
+
+- C# のコーディング規約
+- コミットメッセージ日本語
+- シニア観点でのリスク指摘方針
+- 明示されていない互換性フォールバックは提案・実装しない方針
+
+## 手順系はスキルを使う
+
+- SonarQube MCP 作業: `.cursor/skills/sonarqube-mcp-ops/SKILL.md`
+- Markdown 仕様書作業: `.cursor/skills/markdown-spec-authoring/SKILL.md`
+- Serena MCP（調査・設計前調査・実装でのシンボル活用）: `.cursor/skills/serena-workflow-research-impl/SKILL.md`
+
+Plan 成果を spec へ書き起こすチャットコマンド: `/spec-from-plan-design`（`.cursor/commands/spec-from-plan-design.md`）。
+
+完了した仕様セットをアーカイブするチャットコマンド: `/spec-archive`（`.cursor/commands/spec-archive.md`）。
+
+対象タスクを実行する場合は、まず対応スキルを読み、その手順に従う。
+
+## MCP（Serena）
+
+- 調査・設計前調査・実装では `.cursor/rules/serena-research-and-implementation.mdc` と Serena 調査実装スキルを併用する。

@@ -1,0 +1,17 @@
+---
+alwaysApply: true
+---
+
+# Serena MCP（調査・実装）
+
+Melore の Serena は **`serena-melore`**（`dotnet/`）の 1 つ。`.cursor/mcp.json` と `.mcp.json` に定義している。調査・実装では、このサーバーのシンボル系ツールを優先する。
+
+## 常時原則
+
+- タスク開始時に **`serena-melore` が ready** であることを確認する。
+- ready でないときは**作業を一旦停止**し、MCP 設定で `serena-melore` を有効にするよう促す。
+- ユーザーが「Serena なしで続行」と明示したときだけ、通常の読み取り・編集へフォールバックする。未接続を理由にサイレントに諦めない。
+- コードの探索・参照追跡・シンボル編集は、Serena の **`find_symbol` / `get_symbols_overview` / `find_referencing_symbols` 等**を、grep やファイル一括読みより先に検討する。
+- **`activate_project` は使わない。**
+- **Claude Code の worktree では Serena で編集しない。** 常駐サーバーは本体のチェックアウトに固定されているので、編集が worktree ではなく本体に入る。読み取りの結果も本体の内容で、worktree の変更は含まない。worktree の編集は Edit、確認は Read / Grep を使う。
+- 手順の詳細は `.cursor/skills/serena-workflow-research-impl/SKILL.md` を使う。
