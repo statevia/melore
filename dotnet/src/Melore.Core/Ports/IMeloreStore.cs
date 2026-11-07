@@ -84,15 +84,7 @@ public interface IMeloreStore : IDisposable
     void DeleteRelationshipsByType(string relType);
 
     /// <summary>関係を 1 件追加する。</summary>
-    void AddRelationship(
-        string fromKind,
-        string fromId,
-        string toKind,
-        string toId,
-        string relType,
-        RelationshipBasis basis,
-        double confidence,
-        string evidence);
+    void AddRelationship(RelationshipEntry relationship);
 
     /// <summary>型シンボル（class / interface / record / struct）。</summary>
     IReadOnlyList<IndexedTypeSymbol> ListTypeSymbols();

@@ -107,6 +107,36 @@ public sealed class AccuracyPlanTests
         Assert.Contains(edges, e => e.RelType == "calls" && e.FromFqn == "Demo.Engine.Run()" && e.ToFqn == "Demo.Engine.Helper()");
     }
 
+    /// <summary>自己呼び出しと、ソースに宣言が無い相手への呼び出しは辺にしない。</summary>
+    [Fact]
+    public void SemanticGraph_DropsSelfAndExternalCalls()
+    {
+        // Arrange
+        const string source = """
+            namespace Demo;
+            public sealed class Engine
+            {
+                public void Run()
+                {
+                    Run();
+                    System.GC.Collect();
+                    Unknown();
+                }
+            }
+            """;
+        var compilation = CSharpCompilation.Create(
+            "demo",
+            [CSharpSyntaxTree.ParseText(source)],
+            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)],
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        // Act
+        var edges = RoslynSemanticGraph.FromCompilation(compilation);
+
+        // Assert
+        Assert.Empty(edges);
+    }
+
     /// <summary>calls があれば未抽出とは言わず、ノード数は応答上限で止まる。</summary>
     [Fact]
     public void Trace_StopsAtBudget_AndReportsCalls()
@@ -117,8 +147,8 @@ public sealed class AccuracyPlanTests
         var methods = string.Join('\n', Enumerable.Range(0, 80).Select(i => $"public void M{i}() {{}}"));
         Index(store, analyzer, "dotnet/Engine.cs", "namespace Demo; public sealed class Engine { " + methods + " }");
         var engine = store.FindSymbols("Demo.Engine", 1).Single(s => s.Title == "Demo.Engine");
-        var member = store.FindSymbols("Demo.Engine.M0()", 1).First();
-        store.AddRelationship("symbol", engine.Id, "symbol", member.Id, "calls", RelationshipBasis.Explicit, 1, "M0");
+        var member = store.FindSymbols("Demo.Engine.M0()", 1)[0];
+        store.AddRelationship(new RelationshipEntry("symbol", engine.Id, "symbol", member.Id, "calls", RelationshipBasis.Explicit, 1, "M0"));
 
         // Act
         var wide = new TraceService(store).Trace("Demo.Engine", 1, limit: 256);
@@ -131,15 +161,15 @@ public sealed class AccuracyPlanTests
         Assert.DoesNotContain("未抽出", calls.Limitation ?? "", StringComparison.Ordinal);
     }
 
-    /// <summary>MCP の既定 JSON は日本語をエスケープしない。</summary>
+    /// <summary>MCP ツール結果の JSON は日本語をエスケープしない。</summary>
     [Fact]
     public void McpJson_WritesJapaneseLiterally()
     {
         // Arrange
-        McpJson.UseRelaxedUnicode();
+        var value = new { text = "日本語" };
 
         // Act
-        var json = JsonSerializer.Serialize(new { text = "日本語" }, McpJsonUtilities.DefaultOptions);
+        var json = JsonSerializer.Serialize(value, McpJson.ToolOptions);
 
         // Assert
         Assert.Contains("日本語", json, StringComparison.Ordinal);

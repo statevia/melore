@@ -11,7 +11,7 @@ public sealed class RerankerTests
     public void NoOpReranker_KeepsOrderWithoutModel()
     {
         // Arrange
-        IReranker reranker = new NoOpReranker();
+        var reranker = new NoOpReranker();
         var hits = new[]
         {
             Hit("1", "A"),

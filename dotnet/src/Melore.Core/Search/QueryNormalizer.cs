@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace Melore.Core.Search;
 
 /// <summary>
@@ -5,6 +7,8 @@ namespace Melore.Core.Search;
 /// </summary>
 public static class QueryNormalizer
 {
+    private static readonly Regex TokenPattern = new(@"\$+|[\p{L}\p{N}_-]+", RegexOptions.NonBacktracking);
+
     private static readonly HashSet<string> JapaneseParticles = new(StringComparer.Ordinal)
     {
         "の", "は", "を", "が", "と", "で", "に", "へ", "も", "か", "や", "よ",
@@ -32,8 +36,7 @@ public static class QueryNormalizer
     public static IReadOnlyList<string> Tokens(string query)
     {
         var tokens = new List<string>();
-        foreach (System.Text.RegularExpressions.Match match in
-                 System.Text.RegularExpressions.Regex.Matches(query, @"\$+|[\p{L}\p{N}_-]+"))
+        foreach (Match match in TokenPattern.Matches(query))
         {
             var value = StripParticles(match.Value.Trim('-'));
             if (value.Length == 0 || Stopwords.Contains(value) || JapaneseParticles.Contains(value))

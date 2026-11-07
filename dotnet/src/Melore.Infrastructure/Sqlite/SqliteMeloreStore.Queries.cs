@@ -27,7 +27,7 @@ public sealed partial class SqliteMeloreStore
               AND (s.id = $q OR s.fqn = $q OR s.name = $q)
             LIMIT $limit;
             """;
-        cmd.Parameters.AddWithValue("$repo", RepositoryId);
+        cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
         cmd.Parameters.AddWithValue("$q", idOrFqnOrName);
         cmd.Parameters.AddWithValue("$limit", limit);
         using var reader = cmd.ExecuteReader();
@@ -76,7 +76,7 @@ public sealed partial class SqliteMeloreStore
               AND s.containing_type_fqn = $fqn
             LIMIT 256;
             """;
-        cmd.Parameters.AddWithValue("$repo", RepositoryId);
+        cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
         cmd.Parameters.AddWithValue("$fqn", typeFqn);
         return ReadRelated(cmd, HitKind.Symbol, "declares", RelationshipBasis.Explicit);
     }
@@ -95,7 +95,7 @@ public sealed partial class SqliteMeloreStore
             WHERE f.repository_id = $repo AND f.is_deleted = 0 AND f.path = $path
             LIMIT 64;
             """;
-        cmd.Parameters.AddWithValue("$repo", RepositoryId);
+        cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
         cmd.Parameters.AddWithValue("$path", path);
         return ReadRelated(cmd, HitKind.Test, "tested_by", RelationshipBasis.Inferred);
     }
@@ -115,7 +115,7 @@ public sealed partial class SqliteMeloreStore
               AND c.id <> $id
             LIMIT 32;
             """;
-        cmd.Parameters.AddWithValue("$repo", RepositoryId);
+        cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
         cmd.Parameters.AddWithValue("$id", chunkId);
         return ReadRelated(cmd, HitKind.DocumentChunk, "same_document", RelationshipBasis.Explicit);
     }
@@ -142,39 +142,26 @@ public sealed partial class SqliteMeloreStore
             var from = reader.GetString(2);
             var to = reader.GetString(3);
             var toKind = reader.GetString(5);
-            var otherId = string.Equals(from, fromId, StringComparison.Ordinal) ? to : from;
-            if (string.Equals(toKind, "type_name", StringComparison.Ordinal) &&
-                string.Equals(from, fromId, StringComparison.Ordinal))
-            {
-                foreach (var named in FindSymbols(otherId, 3))
-                {
-                    results.Add(new RelatedHit(named, relType, basis));
-                }
-
-                continue;
-            }
-
-            if (string.Equals(toKind, "file", StringComparison.Ordinal))
-            {
-                foreach (var chunk in ChunksInFile(otherId, 3))
-                {
-                    results.Add(new RelatedHit(chunk, relType, basis));
-                }
-
-                continue;
-            }
-
-            var hit = GetHitById(otherId);
-            if (hit is not null)
-            {
-                results.Add(new RelatedHit(hit, relType, basis));
-            }
+            var isOutgoing = string.Equals(from, fromId, StringComparison.Ordinal);
+            var hits = ResolveRelated(toKind, isOutgoing, isOutgoing ? to : from);
+            results.AddRange(hits.Select(hit => new RelatedHit(hit, relType, basis)));
         }
 
         return results;
     }
 
-    private IReadOnlyList<SearchHit> ChunksInFile(string relativePath, int limit)
+    /// <summary>
+    /// 関係の相手を検索ヒットへ解決する。型名は外向きのときだけ名前で引き、ファイルは先頭のチャンクを返す。
+    /// </summary>
+    private IReadOnlyList<SearchHit> ResolveRelated(string toKind, bool isOutgoing, string otherId)
+        => (toKind, isOutgoing) switch
+        {
+            ("type_name", true) => FindSymbols(otherId, 3),
+            ("file", _) => ChunksInFile(otherId, 3),
+            _ => GetHitById(otherId) is { } hit ? [hit] : []
+        };
+
+    private List<SearchHit> ChunksInFile(string relativePath, int limit)
     {
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = """
@@ -187,7 +174,7 @@ public sealed partial class SqliteMeloreStore
             ORDER BY c.ordinal
             LIMIT $limit;
             """;
-        cmd.Parameters.AddWithValue("$repo", RepositoryId);
+        cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
         cmd.Parameters.AddWithValue("$path", relativePath);
         cmd.Parameters.AddWithValue("$limit", limit);
         using var reader = cmd.ExecuteReader();
@@ -201,7 +188,7 @@ public sealed partial class SqliteMeloreStore
         return hits;
     }
 
-    private List<RelatedHit> ReadRelated(
+    private static List<RelatedHit> ReadRelated(
         Microsoft.Data.Sqlite.SqliteCommand cmd,
         HitKind kind,
         string relType,
@@ -218,15 +205,7 @@ public sealed partial class SqliteMeloreStore
         return hits;
     }
 
-    private void InsertRelationship(
-        string fromId,
-        string fromKind,
-        string toId,
-        string toKind,
-        string relType,
-        string basis,
-        double confidence,
-        string evidence)
+    private void InsertRelationship(RelationshipEntry relationship)
     {
         using var rel = _connection.CreateCommand();
         rel.CommandText = """
@@ -236,14 +215,14 @@ public sealed partial class SqliteMeloreStore
                 ($id, $fk, $from, $tk, $to, $type, $basis, $conf, $ev);
             """;
         rel.Parameters.AddWithValue("$id", Ids.New());
-        rel.Parameters.AddWithValue("$fk", fromKind);
-        rel.Parameters.AddWithValue("$from", fromId);
-        rel.Parameters.AddWithValue("$tk", toKind);
-        rel.Parameters.AddWithValue("$to", toId);
-        rel.Parameters.AddWithValue("$type", relType);
-        rel.Parameters.AddWithValue("$basis", basis);
-        rel.Parameters.AddWithValue("$conf", confidence);
-        rel.Parameters.AddWithValue("$ev", evidence);
+        rel.Parameters.AddWithValue("$fk", relationship.FromKind);
+        rel.Parameters.AddWithValue("$from", relationship.FromId);
+        rel.Parameters.AddWithValue("$tk", relationship.ToKind);
+        rel.Parameters.AddWithValue("$to", relationship.ToId);
+        rel.Parameters.AddWithValue("$type", relationship.RelType);
+        rel.Parameters.AddWithValue("$basis", relationship.Basis.ToString().ToLowerInvariant());
+        rel.Parameters.AddWithValue("$conf", relationship.Confidence);
+        rel.Parameters.AddWithValue("$ev", relationship.Evidence);
         rel.ExecuteNonQuery();
     }
 
@@ -292,24 +271,7 @@ public sealed partial class SqliteMeloreStore
     }
 
     /// <inheritdoc />
-    public void AddRelationship(
-        string fromKind,
-        string fromId,
-        string toKind,
-        string toId,
-        string relType,
-        RelationshipBasis basis,
-        double confidence,
-        string evidence)
-        => InsertRelationship(
-            fromId,
-            fromKind,
-            toId,
-            toKind,
-            relType,
-            basis.ToString().ToLowerInvariant(),
-            confidence,
-            evidence);
+    public void AddRelationship(RelationshipEntry relationship) => InsertRelationship(relationship);
 
     /// <inheritdoc />
     public IReadOnlyList<IndexedTypeSymbol> ListTypeSymbols()
@@ -323,7 +285,7 @@ public sealed partial class SqliteMeloreStore
               AND s.kind IN ('class', 'interface', 'record', 'struct')
             LIMIT 20000;
             """;
-        cmd.Parameters.AddWithValue("$repo", RepositoryId);
+        cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
         using var reader = cmd.ExecuteReader();
         var list = new List<IndexedTypeSymbol>();
         while (reader.Read())
@@ -352,7 +314,7 @@ public sealed partial class SqliteMeloreStore
             WHERE f.repository_id = $repo AND f.is_deleted = 0
             LIMIT 20000;
             """;
-        cmd.Parameters.AddWithValue("$repo", RepositoryId);
+        cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
         using var reader = cmd.ExecuteReader();
         var list = new List<IndexedChunk>();
         while (reader.Read())
@@ -380,7 +342,7 @@ public sealed partial class SqliteMeloreStore
             WHERE f.repository_id = $repo AND f.is_deleted = 0
             LIMIT 20000;
             """;
-        cmd.Parameters.AddWithValue("$repo", RepositoryId);
+        cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
         using var reader = cmd.ExecuteReader();
         var list = new List<IndexedTestMethod>();
         while (reader.Read())

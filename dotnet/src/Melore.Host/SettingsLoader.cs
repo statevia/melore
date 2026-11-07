@@ -8,18 +8,20 @@ namespace Melore.Host;
 /// </summary>
 public static class SettingsLoader
 {
+    private static readonly JsonSerializerOptions ReadOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true
+    };
+
     /// <summary>
     /// ファイルから設定を復元する。
     /// </summary>
     public static MeloreSettings Load(FileInfo file)
     {
         var json = File.ReadAllText(file.FullName);
-        var settings = JsonSerializer.Deserialize<MeloreSettings>(json, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true,
-            ReadCommentHandling = JsonCommentHandling.Skip,
-            AllowTrailingCommas = true
-        }) ?? throw new InvalidOperationException("設定を読めません: " + file.FullName);
+        var settings = JsonSerializer.Deserialize<MeloreSettings>(json, ReadOptions) ?? throw new InvalidOperationException("設定を読めません: " + file.FullName);
 
         if (string.IsNullOrWhiteSpace(settings.RepositoryPath) || !Directory.Exists(settings.RepositoryPath))
         {

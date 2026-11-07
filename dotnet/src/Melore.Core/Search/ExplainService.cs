@@ -53,10 +53,13 @@ public sealed class ExplainService(
             store.GetBody(h.Id) ?? h.Snippet,
             Basis: null)).ToList();
         var (userPrompt, evidenceIds) = ExplainPromptBuilder.BuildUserPrompt(query, chunks);
-        log.LogInformation(
-            "explain evidence_ids={Ids} chat_available={Available}",
-            string.Join(",", evidenceIds),
-            chat.IsAvailable);
+        if (log.IsEnabled(LogLevel.Information))
+        {
+            log.LogInformation(
+                "explain evidence_ids={Ids} chat_available={Available}",
+                string.Join(",", evidenceIds),
+                chat.IsAvailable);
+        }
 
         if (!chat.IsAvailable)
         {

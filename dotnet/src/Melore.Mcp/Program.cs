@@ -1,11 +1,10 @@
 using Melore.Core.Ports;
-using Melore.Mcp;
 using Melore.Host;
+using Melore.Mcp;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-McpJson.UseRelaxedUnicode();
 var settings = SettingsLoader.LoadFromArgs(args);
 var builder = Host.CreateApplicationBuilder();
 builder.Logging.AddConsole(options =>
@@ -24,5 +23,5 @@ builder.Services.AddSingleton<IMeloreStore>(sp => sp.GetRequiredService<MeloreRu
 builder.Services
     .AddMcpServer()
     .WithStdioServerTransport()
-    .WithToolsFromAssembly();
+    .WithToolsFromAssembly(serializerOptions: McpJson.ToolOptions);
 await builder.Build().RunAsync();

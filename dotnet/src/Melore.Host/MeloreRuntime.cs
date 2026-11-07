@@ -16,54 +16,36 @@ namespace Melore.Host;
 /// </summary>
 public sealed class MeloreRuntime : IAsyncDisposable, IDisposable
 {
-    private MeloreRuntime(
-        SqliteMeloreStore store,
-        IEmbeddingClient embeddings,
-        IMeloreChatClient chat,
-        IndexService indexer,
-        SearchService search,
-        ReferenceService references,
-        TraceService trace,
-        ExplainService explain,
-        ILoggerFactory loggers)
+    private MeloreRuntime()
     {
-        Store = store;
-        Embeddings = embeddings;
-        Chat = chat;
-        Indexer = indexer;
-        Search = search;
-        References = references;
-        Trace = trace;
-        Explain = explain;
-        Loggers = loggers;
     }
 
     /// <summary>SQLite ストア。</summary>
-    public SqliteMeloreStore Store { get; }
+    public required SqliteMeloreStore Store { get; init; }
 
     /// <summary>Embedding クライアント。</summary>
-    public IEmbeddingClient Embeddings { get; }
+    public required IEmbeddingClient Embeddings { get; init; }
 
     /// <summary>Chat クライアント。</summary>
-    public IMeloreChatClient Chat { get; }
+    public required IMeloreChatClient Chat { get; init; }
 
     /// <summary>インデクサ。</summary>
-    public IndexService Indexer { get; }
+    public required IndexService Indexer { get; init; }
 
     /// <summary>統合検索。</summary>
-    public SearchService Search { get; }
+    public required SearchService Search { get; init; }
 
     /// <summary>関連列挙。</summary>
-    public ReferenceService References { get; }
+    public required ReferenceService References { get; init; }
 
     /// <summary>追跡。</summary>
-    public TraceService Trace { get; }
+    public required TraceService Trace { get; init; }
 
     /// <summary>根拠付き説明。</summary>
-    public ExplainService Explain { get; }
+    public required ExplainService Explain { get; init; }
 
     /// <summary>ログ。</summary>
-    public ILoggerFactory Loggers { get; }
+    public required ILoggerFactory Loggers { get; init; }
 
     /// <summary>
     /// 設定からランタイムを組み立てる。
@@ -125,16 +107,18 @@ public sealed class MeloreRuntime : IAsyncDisposable, IDisposable
             store,
             chat,
             loggers.CreateLogger<ExplainService>());
-        return new MeloreRuntime(
-            store,
-            embeddings,
-            chat,
-            indexer,
-            search,
-            new ReferenceService(store),
-            new TraceService(store),
-            explain,
-            loggers);
+        return new MeloreRuntime
+        {
+            Store = store,
+            Embeddings = embeddings,
+            Chat = chat,
+            Indexer = indexer,
+            Search = search,
+            References = new ReferenceService(store),
+            Trace = new TraceService(store),
+            Explain = explain,
+            Loggers = loggers
+        };
     }
 
     /// <inheritdoc />

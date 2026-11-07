@@ -19,7 +19,7 @@ public sealed class OllamaChatClient : IMeloreChatClient, IDisposable
     public OllamaChatClient(Uri endpoint, string modelName)
     {
         ModelName = modelName;
-        var baseUri = endpoint.ToString().EndsWith('/') ? endpoint : new Uri(endpoint.ToString() + "/");
+        var baseUri = OllamaEndpoint.WithTrailingSlash(endpoint);
         _client = new OllamaApiClient(baseUri, modelName);
         _probe = new HttpClient { BaseAddress = baseUri, Timeout = TimeSpan.FromSeconds(2) };
         IsAvailable = Probe();
