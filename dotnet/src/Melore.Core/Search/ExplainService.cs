@@ -20,13 +20,18 @@ public sealed class ExplainService(
     /// <summary>
     /// 質問に対し、検索上位のみを根拠に説明する。
     /// </summary>
+    /// <param name="query">質問。</param>
+    /// <param name="limit">根拠に使う最大件数。</param>
+    /// <param name="scope">根拠を取る検索のスコープ。経緯を説明するときは <see cref="SearchScope.History"/>。</param>
+    /// <param name="cancellationToken">キャンセル。</param>
     public async Task<ExplainResult> ExplainAsync(
         string query,
         int limit,
+        SearchScope scope,
         CancellationToken cancellationToken)
     {
         var cap = Math.Clamp(limit, 1, ExplainPromptBuilder.DefaultEvidenceLimit);
-        var hits = await search.SearchAsync(query, cap, cancellationToken).ConfigureAwait(false);
+        var hits = await search.SearchAsync(query, cap, scope, cancellationToken).ConfigureAwait(false);
         var evidenceHits = hits
             .Select(h => HitFormatter.ToDetail(store, h, includeBody: false))
             .ToList();

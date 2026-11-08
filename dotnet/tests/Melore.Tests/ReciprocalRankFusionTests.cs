@@ -35,5 +35,6 @@ public sealed class ReciprocalRankFusionTests
             title,
             title,
             0,
-            new SourceSpan("docs/a.md", 1, 2, "abc"));
+            new SourceSpan("docs/a.md", 1, 2, "abc"),
+            DocumentLifecycle.Current);
 }

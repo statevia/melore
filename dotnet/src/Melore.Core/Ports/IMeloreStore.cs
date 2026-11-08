@@ -29,8 +29,16 @@ public interface IMeloreStore : IDisposable
     /// <summary>C# ファイルのシンボルを upsert する。</summary>
     void UpsertSymbols(string fileId, RepositoryFile file, IReadOnlyList<ParsedSymbol> symbols, string? revision);
 
-    /// <summary>ファイル行を確保して ID を返す。</summary>
+    /// <summary>ファイル行を確保して ID を返す。区分も <see cref="RepositoryFile.Lifecycle"/> で書く。</summary>
     string EnsureFile(RepositoryFile file);
+
+    /// <summary>
+    /// 既存のファイル行の区分を付け直す。値が変わる行だけを書く。
+    /// </summary>
+    /// <param name="lifecycleByPath">リポジトリ相対パスと区分。索引に無いパスは無視する。</param>
+    /// <returns>区分が変わった行数。</returns>
+    /// <remarks>1 つのトランザクションで書く。途中で失敗したら何も変わらない。</remarks>
+    int UpdateLifecycles(IReadOnlyDictionary<string, DocumentLifecycle> lifecycleByPath);
 
     /// <summary>リポジトリ行と世代を更新する。</summary>
     void CompleteIndex(string repositoryName, string rootPath, string? revision, string analyzerVersions);
@@ -39,10 +47,16 @@ public interface IMeloreStore : IDisposable
     IndexStatus GetStatus(string repositoryName);
 
     /// <summary>全文検索。</summary>
-    IReadOnlyList<SearchHit> SearchFullText(string query, int limit);
+    /// <param name="query">利用者のクエリ。FTS 式への変換は実装が行う。</param>
+    /// <param name="limit">返す最大件数。</param>
+    /// <param name="lifecycles">候補に入れる区分。融合の前に絞るため、ここで渡す。1 つ以上必要。</param>
+    IReadOnlyList<SearchHit> SearchFullText(string query, int limit, IReadOnlySet<DocumentLifecycle> lifecycles);
 
     /// <summary>シンボル名検索。</summary>
-    IReadOnlyList<SearchHit> SearchSymbols(string query, int limit);
+    /// <param name="query">名前または FQN の一部。</param>
+    /// <param name="limit">返す最大件数。</param>
+    /// <param name="lifecycles">候補に入れる区分。1 つ以上必要。</param>
+    IReadOnlyList<SearchHit> SearchSymbols(string query, int limit, IReadOnlySet<DocumentLifecycle> lifecycles);
 
     /// <summary>チャンク本文を Embedding 用に列挙する。</summary>
     IReadOnlyList<EmbeddableChunk> ListChunksWithoutEmbeddings();
@@ -51,7 +65,10 @@ public interface IMeloreStore : IDisposable
     void SaveEmbedding(string chunkId, HitKind kind, float[] vector, string model, int dim);
 
     /// <summary>ベクトル近傍。無効時は空。</summary>
-    IReadOnlyList<SearchHit> SearchVectors(float[] query, int limit);
+    /// <param name="query">クエリの埋め込み。</param>
+    /// <param name="limit">返す最大件数。</param>
+    /// <param name="lifecycles">候補に入れる区分。埋め込みを読み出す段階で絞る。1 つ以上必要。</param>
+    IReadOnlyList<SearchHit> SearchVectors(float[] query, int limit, IReadOnlySet<DocumentLifecycle> lifecycles);
 
     /// <summary>ID でヒットを取る。無ければ null。</summary>
     SearchHit? GetHitById(string id);

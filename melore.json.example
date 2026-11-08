@@ -3,6 +3,7 @@
   "repositoryPath": "/absolute/path/to/statevia",
   "include": [
     "docs/**/*.md",
+    ".spec/**/*.md",
     "dotnet/**/*.cs"
   ],
   "exclude": [
@@ -10,10 +11,20 @@
     "**/obj/**",
     "artifacts/**",
     ".local/**",
+    ".spec/templates/**",
+    ".spec/user-templates/**",
     "nodejs/**/node_modules/**",
     "**/.env",
     "**/.env.*"
   ],
+  "history": {
+    "archived": [
+      ".spec/archive/**"
+    ],
+    "rejected": [
+      ".spec/reject/**"
+    ]
+  },
   "solutionPath": "dotnet/statevia.sln",
   "databasePath": null,
   "ollama": {

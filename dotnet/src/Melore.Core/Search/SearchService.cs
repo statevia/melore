@@ -14,9 +14,18 @@ public sealed class SearchService(IMeloreStore store, IEmbeddingClient embedding
     /// <summary>
     /// 自然言語またはキーワードで検索する。
     /// </summary>
+    /// <param name="query">利用者のクエリ。</param>
+    /// <param name="limit">返す最大件数。</param>
+    /// <param name="scope">
+    /// 候補に入れる区分の範囲。既定値は持たせず、呼び出し側が明示する。
+    /// 絞り込みは全文・シンボル・ベクトルのそれぞれで候補を取る段階で行う（融合の後に除外すると、
+    /// 候補の上限を履歴文書が占めて既定のスコープの結果が崩れるため）。
+    /// </param>
+    /// <param name="cancellationToken">キャンセル。</param>
     public async Task<IReadOnlyList<SearchHit>> SearchAsync(
         string query,
         int limit,
+        SearchScope scope,
         CancellationToken cancellationToken)
     {
         store.Initialize();
@@ -28,8 +37,9 @@ public sealed class SearchService(IMeloreStore store, IEmbeddingClient embedding
 
         var pool = Math.Clamp(limit * 4, limit, 32);
         var variants = QueryNormalizer.Expand(trimmed);
-        var ftsLists = variants.Select(v => store.SearchFullText(v, pool)).ToList();
-        var symbolLists = variants.Select(v => store.SearchSymbols(v, pool)).ToList();
+        var lifecycles = SearchScopeResolver.Resolve(scope);
+        var ftsLists = variants.Select(v => store.SearchFullText(v, pool, lifecycles)).ToList();
+        var symbolLists = variants.Select(v => store.SearchSymbols(v, pool, lifecycles)).ToList();
         IReadOnlyList<SearchHit> vectors = [];
         if (embeddings.IsAvailable && store.VectorSearchEnabled)
         {
@@ -37,7 +47,7 @@ public sealed class SearchService(IMeloreStore store, IEmbeddingClient embedding
                 .ConfigureAwait(false);
             if (vector is { Length: > 0 })
             {
-                vectors = store.SearchVectors(vector, pool);
+                vectors = store.SearchVectors(vector, pool, lifecycles);
             }
         }
 

@@ -42,7 +42,7 @@ public sealed class RerankerTests
         var search = new SearchService(store, new NullEmbeddingClient(), reranker);
 
         // Act
-        var hits = await search.SearchAsync("nothing-at-all", 4, CancellationToken.None);
+        var hits = await search.SearchAsync("nothing-at-all", 4, SearchScope.Current, CancellationToken.None);
 
         // Assert
         Assert.Empty(hits);
@@ -50,7 +50,7 @@ public sealed class RerankerTests
     }
 
     private static SearchHit Hit(string id, string title)
-        => new(id, HitKind.DocumentChunk, title, title, 0, new SourceSpan("docs/a.md", 1, 2, "abc"));
+        => new(id, HitKind.DocumentChunk, title, title, 0, new SourceSpan("docs/a.md", 1, 2, "abc"), DocumentLifecycle.Current);
 
     private sealed class CapturingReranker(List<string> queries) : IReranker
     {

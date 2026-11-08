@@ -3,8 +3,8 @@
 | 項目 | 値 |
 | --- | --- |
 | 種別 | Architecture |
-| Version | 0.1 |
-| 更新日 | 2026-11-02 |
+| Version | 0.2 |
+| 更新日 | 2026-11-08 |
 
 ## 1. 位置づけ
 
@@ -125,6 +125,9 @@ explain に渡すコンテキストは、統合後の上位 N チャンクと関
 - `revision`（Git SHA）
 - `kind`（document / symbol / test）
 - `relationshipBasis`（`explicit` | `inferred`）。該当する場合のみ
+- `lifecycle`（`current` | `archived` | `rejected`）。出典ファイルが現行か、完了・却下した履歴文書か
+
+検索は既定で `current` だけを候補にする。履歴文書は `scope=history`（または `all`）を指定したときだけ返す。区分はパスと `melore.json` の `history` の glob で決め、文書のヘッダーは見ない。
 
 行番号はパーサがファイル読み取り時に確定する。再計算でずれる場合はインデックス再構築対象とする。
 
@@ -142,6 +145,8 @@ explain に渡すコンテキストは、統合後の上位 N チャンクと関
 ## 9. セキュリティ境界
 
 - 対象リポジトリは読み取り専用で開く。
+- 読むのは `repositoryPath` の配下だけ。ただし、`repositoryPath` の配下に利用者が置いたリンク（ジャンクション・シンボリックリンク）は、その先も読む。Statevia の worktree（例: `statevia-main`）では、Git の管理外の `.spec/specs` などが本体の clone へのジャンクションになっているためである。glob（include / exclude / `history`）に絶対パスや `..` を書いて外を指すことはできない。
+- `.gitignore` の対象ファイルは `git status --porcelain` に出ないので、検索前の自動の再索引では拾われない。編集や移動は次の `index` で反映される。
 - インデックス DB は Melore のデータディレクトリ（例: `%LOCALAPPDATA%\Melore\` または設定パス）。対象 Git 配下に書き込まない。
 - `.env`、`*credentials*`、秘密鍵は除外リストでスキップする。
 - MCP はローカル stdio。認証・テナントは持たない（単一利用者前提）。

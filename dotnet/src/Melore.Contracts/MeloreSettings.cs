@@ -34,6 +34,25 @@ public sealed class MeloreSettings
 
     /// <summary>Ollama 接続。</summary>
     public OllamaSettings Ollama { get; init; } = new();
+
+    /// <summary>履歴文書の置き場所。未設定ならすべて現行として扱う。</summary>
+    public HistorySettings History { get; init; } = new();
+}
+
+/// <summary>
+/// 完了・却下した文書を区別する glob。
+/// </summary>
+/// <remarks>
+/// include / exclude で索引に入ったファイルにだけ効く。両方に当たるパスは設定エラーとする。
+/// 書式は include と同じリポジトリルート相対の glob。
+/// </remarks>
+public sealed class HistorySettings
+{
+    /// <summary>完了して移された文書の glob。例: <c>.spec/archive/**</c>。</summary>
+    public string[] Archived { get; init; } = [];
+
+    /// <summary>却下して移された文書の glob。例: <c>.spec/reject/**</c>。</summary>
+    public string[] Rejected { get; init; } = [];
 }
 
 /// <summary>

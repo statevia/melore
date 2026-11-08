@@ -61,7 +61,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
         schema.CommandText = SchemaSql;
         schema.ExecuteNonQuery();
 
-        MigrateFtsIfNeeded();
+        MigrateSchemaIfNeeded();
         SqliteVecLoaded = SqliteVecLoader.TryLoad(_connection);
         EnsureRepository();
         _initialized = true;
@@ -122,12 +122,13 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
             using var update = _connection.CreateCommand();
             update.CommandText = """
                 UPDATE files
-                SET git_blob_sha = $sha, language = $lang, last_write_utc = $ts, is_deleted = 0
+                SET git_blob_sha = $sha, language = $lang, last_write_utc = $ts, is_deleted = 0, lifecycle = $lifecycle
                 WHERE id = $id;
                 """;
             update.Parameters.AddWithValue("$sha", file.BlobSha);
             update.Parameters.AddWithValue("$lang", file.Language);
             update.Parameters.AddWithValue("$ts", DateTimeOffset.UtcNow.ToString("O"));
+            update.Parameters.AddWithValue(LifecycleParameter, LifecycleText.ToText(file.Lifecycle));
             update.Parameters.AddWithValue("$id", existing);
             update.ExecuteNonQuery();
             return existing;
@@ -136,8 +137,8 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
         var id = Ids.New();
         using var insert = _connection.CreateCommand();
         insert.CommandText = """
-            INSERT INTO files (id, repository_id, path, language, git_blob_sha, last_write_utc, is_deleted)
-            VALUES ($id, $repo, $path, $lang, $sha, $ts, 0);
+            INSERT INTO files (id, repository_id, path, language, git_blob_sha, last_write_utc, is_deleted, lifecycle)
+            VALUES ($id, $repo, $path, $lang, $sha, $ts, 0, $lifecycle);
             """;
         insert.Parameters.AddWithValue("$id", id);
         insert.Parameters.AddWithValue(RepoParameter, RepositoryId);
@@ -145,8 +146,41 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
         insert.Parameters.AddWithValue("$lang", file.Language);
         insert.Parameters.AddWithValue("$sha", file.BlobSha);
         insert.Parameters.AddWithValue("$ts", DateTimeOffset.UtcNow.ToString("O"));
+        insert.Parameters.AddWithValue(LifecycleParameter, LifecycleText.ToText(file.Lifecycle));
         insert.ExecuteNonQuery();
         return id;
+    }
+
+    /// <inheritdoc />
+    public int UpdateLifecycles(IReadOnlyDictionary<string, DocumentLifecycle> lifecycleByPath)
+    {
+        EnsureRepository();
+        if (lifecycleByPath.Count == 0)
+        {
+            return 0;
+        }
+
+        using var transaction = _connection.BeginTransaction();
+        using var update = _connection.CreateCommand();
+        update.Transaction = transaction;
+        update.CommandText = """
+            UPDATE files
+            SET lifecycle = $lifecycle
+            WHERE repository_id = $repo AND path = $path AND lifecycle <> $lifecycle;
+            """;
+        var lifecycle = update.Parameters.Add(LifecycleParameter, SqliteType.Text);
+        var path = update.Parameters.Add("$path", SqliteType.Text);
+        update.Parameters.AddWithValue(RepoParameter, RepositoryId);
+        var changed = 0;
+        foreach (var (relativePath, value) in lifecycleByPath)
+        {
+            lifecycle.Value = LifecycleText.ToText(value);
+            path.Value = relativePath;
+            changed += update.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+        return changed;
     }
 
     /// <inheritdoc />
@@ -485,7 +519,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<SearchHit> SearchFullText(string query, int limit)
+    public IReadOnlyList<SearchHit> SearchFullText(string query, int limit, IReadOnlySet<DocumentLifecycle> lifecycles)
     {
         var ftsQuery = ToFtsQuery(query);
         if (ftsQuery is null)
@@ -497,19 +531,21 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
         using (var cmd = _connection.CreateCommand())
         {
             cmd.CommandText = """
-                SELECT c.id, c.heading_path, c.text, c.start_line, c.end_line, f.path, r.indexed_revision
+                SELECT c.id, c.heading_path, c.text, c.start_line, c.end_line, f.path, r.indexed_revision, f.lifecycle
                 FROM document_fts
                 JOIN document_chunks c ON c.id = document_fts.id
                 JOIN documents d ON d.id = c.document_id
                 JOIN files f ON f.id = d.file_id
                 JOIN repositories r ON r.id = f.repository_id
                 WHERE document_fts MATCH $q AND f.repository_id = $repo AND f.is_deleted = 0
+                  AND f.lifecycle IN ($l0, $l1, $l2)
                 ORDER BY bm25(document_fts)
                 LIMIT $limit;
                 """;
             cmd.Parameters.AddWithValue("$q", ftsQuery);
             cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
             cmd.Parameters.AddWithValue("$limit", limit);
+            AddLifecycleParameters(cmd, lifecycles);
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
@@ -521,18 +557,20 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
         {
             cmd.CommandText = """
                 SELECT s.id, s.name, COALESCE(s.documentation_comment, s.signature, s.fqn),
-                       s.start_line, s.end_line, f.path, r.indexed_revision
+                       s.start_line, s.end_line, f.path, r.indexed_revision, f.lifecycle
                 FROM symbol_fts
                 JOIN symbols s ON s.id = symbol_fts.id
                 JOIN files f ON f.id = s.file_id
                 JOIN repositories r ON r.id = f.repository_id
                 WHERE symbol_fts MATCH $q AND f.repository_id = $repo AND f.is_deleted = 0
+                  AND f.lifecycle IN ($l0, $l1, $l2)
                 ORDER BY bm25(symbol_fts)
                 LIMIT $limit;
                 """;
             cmd.Parameters.AddWithValue("$q", ftsQuery);
             cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
             cmd.Parameters.AddWithValue("$limit", limit);
+            AddLifecycleParameters(cmd, lifecycles);
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
@@ -544,22 +582,24 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<SearchHit> SearchSymbols(string query, int limit)
+    public IReadOnlyList<SearchHit> SearchSymbols(string query, int limit, IReadOnlySet<DocumentLifecycle> lifecycles)
     {
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = """
             SELECT s.id, s.fqn, COALESCE(s.documentation_comment, s.signature, s.fqn),
-                   s.start_line, s.end_line, f.path, r.indexed_revision
+                   s.start_line, s.end_line, f.path, r.indexed_revision, f.lifecycle
             FROM symbols s
             JOIN files f ON f.id = s.file_id
             JOIN repositories r ON r.id = f.repository_id
             WHERE f.repository_id = $repo AND f.is_deleted = 0
+              AND f.lifecycle IN ($l0, $l1, $l2)
               AND (instr(lower(s.name), lower($q)) > 0 OR instr(lower(s.fqn), lower($q)) > 0)
             LIMIT $limit;
             """;
         cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
         cmd.Parameters.AddWithValue("$q", query);
         cmd.Parameters.AddWithValue("$limit", limit);
+        AddLifecycleParameters(cmd, lifecycles);
         using var reader = cmd.ExecuteReader();
         var hits = new List<SearchHit>();
         var rank = 0;
@@ -634,24 +674,34 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<SearchHit> SearchVectors(float[] query, int limit)
+    public IReadOnlyList<SearchHit> SearchVectors(float[] query, int limit, IReadOnlySet<DocumentLifecycle> lifecycles)
     {
         if (query.Length == 0)
         {
             return [];
         }
 
+        // 埋め込みは C# 側で全件のコサイン類似度を取るので、読み出す段階で区分を絞る。
+        // 絞らないと、既定のスコープでも履歴文書の分だけ読み込みが増える。
         var scored = new List<(string ChunkId, string Kind, double Score)>();
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = """
             SELECT e.chunk_id, e.kind, e.vector
             FROM embeddings e
             JOIN (
-                SELECT id FROM document_chunks
+                SELECT c.id AS id, d.file_id AS file_id
+                FROM document_chunks c
+                JOIN documents d ON d.id = c.document_id
                 UNION ALL
-                SELECT id FROM symbols
-            ) k ON k.id = e.chunk_id;
+                SELECT s.id AS id, s.file_id AS file_id
+                FROM symbols s
+            ) k ON k.id = e.chunk_id
+            JOIN files f ON f.id = k.file_id
+            WHERE f.repository_id = $repo AND f.is_deleted = 0
+              AND f.lifecycle IN ($l0, $l1, $l2);
             """;
+        cmd.Parameters.AddWithValue(RepoParameter, RepositoryId);
+        AddLifecycleParameters(cmd, lifecycles);
         using var reader = cmd.ExecuteReader();
         while (reader.Read())
         {
@@ -800,13 +850,15 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
         var end = reader.GetInt32(4);
         var path = reader.GetString(5);
         var revision = reader.IsDBNull(6) ? null : reader.GetString(6);
+        var lifecycle = LifecycleText.ParseLifecycle(reader.GetString(7));
         return new SearchHit(
             id,
             kind,
             title,
             Snippet(text),
             1.0 / (rank + 1),
-            new SourceSpan(path, start, end, revision));
+            new SourceSpan(path, start, end, revision),
+            lifecycle);
     }
 
     private SearchHit? LoadHit(string id, string kind, double score)
@@ -818,7 +870,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
         {
             cmd.CommandText = """
                 SELECT s.id, s.fqn, COALESCE(s.documentation_comment, s.signature, s.fqn),
-                       s.start_line, s.end_line, f.path, r.indexed_revision
+                       s.start_line, s.end_line, f.path, r.indexed_revision, f.lifecycle
                 FROM symbols s
                 JOIN files f ON f.id = s.file_id
                 JOIN repositories r ON r.id = f.repository_id
@@ -828,7 +880,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
         else
         {
             cmd.CommandText = """
-                SELECT c.id, c.heading_path, c.text, c.start_line, c.end_line, f.path, r.indexed_revision
+                SELECT c.id, c.heading_path, c.text, c.start_line, c.end_line, f.path, r.indexed_revision, f.lifecycle
                 FROM document_chunks c
                 JOIN documents d ON d.id = c.document_id
                 JOIN files f ON f.id = d.file_id
@@ -859,12 +911,49 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
         return tokens.Count == 0 ? null : string.Join(" AND ", tokens);
     }
 
-    private const int CurrentSchemaVersion = 2;
+    /// <summary>スキーマの版。3 で <c>files.lifecycle</c> を足した。</summary>
+    private const int CurrentSchemaVersion = 3;
+
+    /// <summary>
+    /// 版を書く SQL。PRAGMA はパラメータを受け付けないので、連結せずに定数で持つ。
+    /// <see cref="CurrentSchemaVersion"/> を上げるときは、ここも同じ値にする（テストで突き合わせる）。
+    /// </summary>
+    private const string SetCurrentSchemaVersionSql = "PRAGMA user_version = 3;";
     private const string RepoParameter = "$repo";
     private const string FileParameter = "$file";
     private const string NameParameter = "$name";
+    private const string LifecycleParameter = "$lifecycle";
 
-    private void MigrateFtsIfNeeded()
+    /// <summary>
+    /// 区分の絞り込み <c>f.lifecycle IN ($l0, $l1, $l2)</c> のパラメータを詰める。
+    /// </summary>
+    /// <remarks>
+    /// 区分は 3 種しかないので、プレースホルダを 3 つに固定し、SQL を動的に組み立てない。
+    /// 使わない枠には先頭の値を重ねて入れる（IN の重複は結果に影響しない）。
+    /// </remarks>
+    /// <exception cref="ArgumentException">区分が 1 つも無いとき。</exception>
+    private static void AddLifecycleParameters(SqliteCommand command, IReadOnlySet<DocumentLifecycle> lifecycles)
+    {
+        if (lifecycles.Count == 0)
+        {
+            throw new ArgumentException("区分を 1 つ以上指定してください。", nameof(lifecycles));
+        }
+
+        var values = lifecycles.Order().Select(LifecycleText.ToText).ToList();
+        for (var i = 0; i < 3; i++)
+        {
+            command.Parameters.AddWithValue("$l" + i.ToString(CultureInfo.InvariantCulture), values[Math.Min(i, values.Count - 1)]);
+        }
+    }
+
+    /// <summary>
+    /// <c>PRAGMA user_version</c> を見て、古いスキーマを順に上げる。
+    /// </summary>
+    /// <remarks>
+    /// 2: FTS の列構成を作り直す。3: <c>files.lifecycle</c> と、その絞り込み用インデックスを足す。
+    /// 新規 DB は <see cref="SchemaSql"/> で列を持って作られるので、列の追加は存在を確かめてから行う。
+    /// </remarks>
+    private void MigrateSchemaIfNeeded()
     {
         using var read = _connection.CreateCommand();
         read.CommandText = "PRAGMA user_version;";
@@ -874,6 +963,22 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
             return;
         }
 
+        if (version < 2)
+        {
+            RebuildFullTextTables();
+        }
+
+        // 版 3 の手順。ここに来るのは version < CurrentSchemaVersion（= 3）のときだけなので条件は付けない。
+        // 列の有無を確かめてから足し、インデックスも IF NOT EXISTS なので、何度呼んでも結果は同じ。
+        AddLifecycleColumn();
+
+        using var set = _connection.CreateCommand();
+        set.CommandText = SetCurrentSchemaVersionSql;
+        set.ExecuteNonQuery();
+    }
+
+    private void RebuildFullTextTables()
+    {
         using var recreate = _connection.CreateCommand();
         recreate.CommandText = """
             DROP TABLE IF EXISTS document_fts;
@@ -893,10 +998,23 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
             SELECT id, name, fqn, COALESCE(signature, ''), COALESCE(documentation_comment, '') FROM symbols;
             """;
         fill.ExecuteNonQuery();
+    }
 
-        using var set = _connection.CreateCommand();
-        set.CommandText = "PRAGMA user_version = " + CurrentSchemaVersion + ";";
-        set.ExecuteNonQuery();
+    private void AddLifecycleColumn()
+    {
+        using var probe = _connection.CreateCommand();
+        probe.CommandText = "SELECT COUNT(*) FROM pragma_table_info('files') WHERE name = 'lifecycle';";
+        var exists = Convert.ToInt32(probe.ExecuteScalar(), CultureInfo.InvariantCulture) > 0;
+        if (!exists)
+        {
+            using var alter = _connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE files ADD COLUMN lifecycle TEXT NOT NULL DEFAULT 'current';";
+            alter.ExecuteNonQuery();
+        }
+
+        using var index = _connection.CreateCommand();
+        index.CommandText = "CREATE INDEX IF NOT EXISTS idx_files_repo_lifecycle ON files (repository_id, lifecycle, is_deleted);";
+        index.ExecuteNonQuery();
     }
 
     private static string Snippet(string text)
@@ -955,6 +1073,7 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
             git_blob_sha TEXT NOT NULL,
             last_write_utc TEXT,
             is_deleted INTEGER NOT NULL DEFAULT 0,
+            lifecycle TEXT NOT NULL DEFAULT 'current',
             UNIQUE (repository_id, path),
             FOREIGN KEY (repository_id) REFERENCES repositories(id)
         );

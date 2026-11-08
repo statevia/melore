@@ -3,8 +3,8 @@
 | 項目 | 値 |
 | --- | --- |
 | 種別 | Architecture |
-| Version | 0.1 |
-| 更新日 | 2026-11-06 |
+| Version | 0.2 |
+| 更新日 | 2026-11-08 |
 
 永続化は SQLite 1 ファイル。ベクトルは `sqlite-vec` の仮想テーブルに分離する。
 
@@ -43,8 +43,11 @@
 | git_blob_sha | TEXT | |
 | last_write_utc | TEXT | |
 | is_deleted | INTEGER | 論理削除（差分の監査用。通常クエリから除外） |
+| lifecycle | TEXT | 区分。`current` / `archived` / `rejected`。既定 `current`。パスと `melore.json` の `history` で決め、`index` のたびに付け直す |
 
-UNIQUE(repository_id, path)
+UNIQUE(repository_id, path)、INDEX(repository_id, lifecycle, is_deleted)
+
+`lifecycle` はスキーマ版 3 で足した。版 2 の DB を開くと列を足し、既存の行は `current` になる（次の `index` で付け直す）。検索は全文・シンボル・ベクトルのそれぞれで、スコープに対応する区分だけを候補にする。
 
 ### documents
 
@@ -183,6 +186,7 @@ SearchHit
   snippet              短い抜粋（既定）
   score
   sources[]            path, startLine, endLine, revision
+  lifecycle            current | archived | rejected
   related[]            任意。関係を畳み込みすぎない
 ```
 

@@ -56,7 +56,7 @@ public sealed class AccuracyPlanTests
         var search = new SearchService(store, new NullEmbeddingClient(), new NoOpReranker());
 
         // Act
-        var hits = await search.SearchAsync("Widget", 8, CancellationToken.None);
+        var hits = await search.SearchAsync("Widget", 8, SearchScope.Current, CancellationToken.None);
 
         // Assert
         Assert.Contains("Widget.cs", hits[0].Source.Path, StringComparison.Ordinal);

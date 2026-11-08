@@ -1,3 +1,4 @@
+using Melore.Contracts;
 using Melore.Core.Models;
 using Melore.Core.Ports;
 using Melore.Core.Search;
@@ -22,7 +23,7 @@ public sealed partial class ExplainTests
             NullLogger<ExplainService>.Instance);
 
         // Act
-        var result = await explain.ExplainAsync("存在しないクエリ xyzzy-melore", 8, CancellationToken.None);
+        var result = await explain.ExplainAsync("存在しないクエリ xyzzy-melore", 8, SearchScope.Current, CancellationToken.None);
 
         // Assert
         Assert.Equal(ExplainPromptBuilder.NoEvidenceAnswer, result.Answer);
@@ -45,7 +46,7 @@ public sealed partial class ExplainTests
             NullLogger<ExplainService>.Instance);
 
         // Act
-        var result = await explain.ExplainAsync("Fork Join", 8, CancellationToken.None);
+        var result = await explain.ExplainAsync("Fork Join", 8, SearchScope.Current, CancellationToken.None);
 
         // Assert
         Assert.Equal(ExplainPromptBuilder.ChatUnavailableAnswer, result.Answer);
@@ -69,7 +70,7 @@ public sealed partial class ExplainTests
             NullLogger<ExplainService>.Instance);
 
         // Act
-        var result = await explain.ExplainAsync("Join", 8, CancellationToken.None);
+        var result = await explain.ExplainAsync("Join", 8, SearchScope.Current, CancellationToken.None);
 
         // Assert
         Assert.True(result.ChatUsed);
