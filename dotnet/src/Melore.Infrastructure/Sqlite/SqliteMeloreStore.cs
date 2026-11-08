@@ -913,6 +913,12 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
 
     /// <summary>スキーマの版。3 で <c>files.lifecycle</c> を足した。</summary>
     private const int CurrentSchemaVersion = 3;
+
+    /// <summary>
+    /// 版を書く SQL。PRAGMA はパラメータを受け付けないので、連結せずに定数で持つ。
+    /// <see cref="CurrentSchemaVersion"/> を上げるときは、ここも同じ値にする（テストで突き合わせる）。
+    /// </summary>
+    private const string SetCurrentSchemaVersionSql = "PRAGMA user_version = 3;";
     private const string RepoParameter = "$repo";
     private const string FileParameter = "$file";
     private const string NameParameter = "$name";
@@ -962,13 +968,12 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
             RebuildFullTextTables();
         }
 
-        if (version < 3)
-        {
-            AddLifecycleColumn();
-        }
+        // 版 3 の手順。ここに来るのは version < CurrentSchemaVersion（= 3）のときだけなので条件は付けない。
+        // 列の有無を確かめてから足し、インデックスも IF NOT EXISTS なので、何度呼んでも結果は同じ。
+        AddLifecycleColumn();
 
         using var set = _connection.CreateCommand();
-        set.CommandText = "PRAGMA user_version = " + CurrentSchemaVersion.ToString(CultureInfo.InvariantCulture) + ";";
+        set.CommandText = SetCurrentSchemaVersionSql;
         set.ExecuteNonQuery();
     }
 

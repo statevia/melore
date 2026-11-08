@@ -363,6 +363,34 @@ public sealed class HistoryDocumentScopeTests
 
         // Assert
         Assert.Equal(0, changed);
+        Assert.Equal(3, ReadUserVersion(db));
+    }
+
+    /// <summary>新規の DB は、現在のスキーマ版（3）で作られる。版の定数と、版を書く SQL の食い違いを検出する。</summary>
+    [Fact]
+    public void Initialize_NewDatabase_WritesCurrentSchemaVersion()
+    {
+        // Arrange
+        var db = NewDatabasePath();
+
+        // Act
+        using (var store = new SqliteMeloreStore(db, "fixture", "C:\\tmp\\fixture"))
+        {
+            store.Initialize();
+        }
+
+        // Assert
+        Assert.Equal(3, ReadUserVersion(db));
+    }
+
+    private static int ReadUserVersion(string db)
+    {
+        SqliteConnection.ClearAllPools();
+        using var connection = new SqliteConnection("Data Source=" + db);
+        connection.Open();
+        using var read = connection.CreateCommand();
+        read.CommandText = "PRAGMA user_version;";
+        return Convert.ToInt32(read.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
     }
 
     /// <summary>history の glob だけを変えて索引し直すと、再解析・再埋め込みをせずに区分だけが変わる。</summary>
