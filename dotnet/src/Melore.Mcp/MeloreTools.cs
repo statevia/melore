@@ -7,6 +7,7 @@ using Melore.Contracts;
 using Melore.Core.Indexing;
 using Melore.Core.Ports;
 using Melore.Core.Search;
+using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
 namespace Melore.Mcp;
@@ -41,19 +42,21 @@ public sealed class MeloreTools(
     /// 所在が分からない仕様・実装・テストを探す。grep より先に使う。
     /// </summary>
     [McpServerTool(Name = "search", Title = "Search Melore index")]
-    [Description("Use before grep when the file location is unknown. Searches specifications, C# implementation, and tests. Example: Fork Join の親子. Every hit has a path and line range. Default body is a short snippet.")]
+    [Description("Use before grep when the file location is unknown. Searches specifications, C# implementation, and tests. Example: Fork Join の親子. Every hit has a path, line range, and lifecycle (current, archived, rejected). Default body is a short snippet. Default scope is current. To find why something was decided or why a proposal was rejected, use scope=history (completed and rejected specs). Example: ノード ID を 12 桁の 16 進にした理由.")]
     public Task<SearchToolResult> Search(
         [Description("Natural language or keywords. Japanese is fine, for example 冪等性キー")] string query,
         [Description("Maximum hits")] int limit = 8,
         [Description("If true, include full chunk text")] bool includeBody = false,
+        [Description("current (default), history (completed and rejected specs only), or all")] string? scope = null,
         CancellationToken cancellationToken = default)
         => InvokeAsync(
             "search",
-            new { query, limit, includeBody },
+            new { query, limit, includeBody, scope },
             async () =>
             {
+                var resolved = ParseScope(scope);
                 var freshness = await indexer.EnsureFreshAsync(settings, cancellationToken).ConfigureAwait(false);
-                var hits = await search.SearchAsync(query, Math.Clamp(limit, 1, 32), cancellationToken)
+                var hits = await search.SearchAsync(query, Math.Clamp(limit, 1, 32), resolved, cancellationToken)
                     .ConfigureAwait(false);
                 return new SearchToolResult(
                     hits.Select(h => HitFormatter.ToDetail(store, h, includeBody)).ToList(),
@@ -111,18 +114,20 @@ public sealed class MeloreTools(
     /// 検索上位だけを根拠に短く説明する。先に search し、足りなければこれ。
     /// </summary>
     [McpServerTool(Name = "explain", Title = "Explain from search evidence")]
-    [Description("Explain from top search hits only, with path and line citations. Use for a short answer after search. Example: Join で枝が書いた vars を親へ戻す規則. Does not invent missing types or paths.")]
+    [Description("Explain from top search hits only, with path and line citations. Use for a short answer after search. Example: Join で枝が書いた vars を親へ戻す規則. Does not invent missing types or paths. Use scope=history to explain why something was decided or rejected.")]
     public Task<ExplainResult> Explain(
         [Description("Natural language question")] string query,
         [Description("Maximum evidence hits, 1 to 8")] int limit = 8,
+        [Description("current (default), history (completed and rejected specs only), or all")] string? scope = null,
         CancellationToken cancellationToken = default)
         => InvokeAsync(
             "explain",
-            new { query, limit },
+            new { query, limit, scope },
             async () =>
             {
+                var resolved = ParseScope(scope);
                 var freshness = await indexer.EnsureFreshAsync(settings, cancellationToken).ConfigureAwait(false);
-                var result = await explain.ExplainAsync(query, Math.Clamp(limit, 1, 8), cancellationToken)
+                var result = await explain.ExplainAsync(query, Math.Clamp(limit, 1, 8), resolved, cancellationToken)
                     .ConfigureAwait(false);
                 return result with
                 {
@@ -132,6 +137,15 @@ public sealed class MeloreTools(
                 };
             },
             cancellationToken);
+
+    /// <summary>
+    /// ツール引数の <c>scope</c> を解釈する。
+    /// </summary>
+    /// <exception cref="McpException">許可値以外のとき。メッセージは許可値だけを示し、内部情報を含めない。</exception>
+    private static SearchScope ParseScope(string? scope)
+        => LifecycleText.TryParseScope(scope, out var resolved)
+            ? resolved
+            : throw new McpException("scope は " + LifecycleText.AllowedScopes + " のどれかを指定してください。");
 
     private async Task<T> InvokeAsync<T>(
         string tool,

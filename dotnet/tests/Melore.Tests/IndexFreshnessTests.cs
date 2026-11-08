@@ -167,7 +167,7 @@ public sealed class IndexFreshnessTests
         // Act
         var freshness = await indexer.EnsureFreshAsync(settings, CancellationToken.None);
         var hits = await new SearchService(store, new NullEmbeddingClient(), new NoOpReranker())
-            .SearchAsync("InProcessBranchScope", 8, CancellationToken.None);
+            .SearchAsync("InProcessBranchScope", 8, SearchScope.Current, CancellationToken.None);
 
         // Assert
         Assert.False(freshness.Dirty);

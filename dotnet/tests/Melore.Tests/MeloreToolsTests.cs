@@ -26,6 +26,49 @@ public sealed class MeloreToolsTests(MeloreToolsTests.Fixture fixture) : IClassF
         Assert.False(result.Dirty);
     }
 
+    /// <summary>既定のスコープでは、各ヒットの lifecycle が current になる。</summary>
+    [Fact]
+    public async Task Search_DefaultScope_HitsAreCurrent()
+    {
+        // Arrange
+        var tools = fixture.Tools;
+
+        // Act
+        var result = await tools.Search("Engine", limit: 8);
+
+        // Assert
+        Assert.NotEmpty(result.Hits);
+        Assert.All(result.Hits, hit => Assert.Equal("current", hit.Lifecycle));
+    }
+
+    /// <summary>許可値以外の scope は、許可値を示す McpException になる。</summary>
+    [Fact]
+    public async Task Search_UnknownScope_ThrowsMcpException()
+    {
+        // Arrange
+        var tools = fixture.Tools;
+
+        // Act
+        var error = await Assert.ThrowsAsync<ModelContextProtocol.McpException>(() => tools.Search("Engine", scope: "archive"));
+
+        // Assert
+        Assert.Contains(LifecycleText.AllowedScopes, error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>history が無い索引で scope=history を指定すると、ヒットは空になる。</summary>
+    [Fact]
+    public async Task Search_HistoryScopeWithoutHistory_ReturnsEmpty()
+    {
+        // Arrange
+        var tools = fixture.Tools;
+
+        // Act
+        var result = await tools.Search("Engine", scope: "history");
+
+        // Assert
+        Assert.Empty(result.Hits);
+    }
+
     /// <summary>includeBody を指定すると本文を返す。</summary>
     [Fact]
     public async Task Search_IncludeBody_ReturnsBody()

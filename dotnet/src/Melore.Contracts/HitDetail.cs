@@ -3,6 +3,7 @@ namespace Melore.Contracts;
 /// <summary>
 /// MCP / CLI 向けのヒット。既定は snippet のみ。
 /// </summary>
+/// <param name="Lifecycle">出典ファイルの区分（<c>current</c> / <c>archived</c> / <c>rejected</c>）。</param>
 public sealed record HitDetail(
     string Id,
     string Kind,
@@ -15,7 +16,8 @@ public sealed record HitDetail(
     int EndLine,
     string? Revision,
     string? RelType,
-    string? Basis)
+    string? Basis,
+    string Lifecycle)
 {
     /// <summary>
     /// 検索ヒットから変換する。
@@ -33,5 +35,6 @@ public sealed record HitDetail(
             hit.Source.EndLine,
             hit.Source.Revision,
             relType,
-            basis);
+            basis,
+            LifecycleText.ToText(hit.Lifecycle));
 }

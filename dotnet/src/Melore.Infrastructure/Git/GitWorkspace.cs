@@ -16,6 +16,7 @@ namespace Melore.Infrastructure.Git;
 public sealed class GitWorkspace(MeloreSettings settings) : IGitWorkspace
 {
     private readonly string? _gitPath = GitExecutableLocator.Find();
+    private readonly GlobLifecycleClassifier _lifecycles = new(settings.History);
 
     /// <inheritdoc />
     public async Task<string?> GetHeadRevisionAsync(CancellationToken cancellationToken)
@@ -69,7 +70,7 @@ public sealed class GitWorkspace(MeloreSettings settings) : IGitWorkspace
                 sha = "sha256:" + Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
             }
 
-            files.Add(new RepositoryFile(relative, full, sha, language));
+            files.Add(new RepositoryFile(relative, full, sha, language, _lifecycles.Classify(relative)));
         }
 
         return files;
@@ -167,7 +168,7 @@ public sealed class GitWorkspace(MeloreSettings settings) : IGitWorkspace
             sha = "sha256:" + Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         }
 
-        return new RepositoryFile(relative, full, sha, language);
+        return new RepositoryFile(relative, full, sha, language, _lifecycles.Classify(relative));
     }
 
     private Matcher CreateMatcher()

@@ -3,8 +3,8 @@
 | 項目 | 値 |
 | --- | --- |
 | 種別 | Guide |
-| Version | 0.1 |
-| 更新日 | 2026-11-06 |
+| Version | 0.2 |
+| 更新日 | 2026-11-08 |
 
 人が使うコマンド。発行先はリポジトリルートの `artifacts/melore/melore.exe`。エージェント向けの同じ機能は MCP であり、この文書の対象外。
 
@@ -26,12 +26,15 @@ dotnet publish src/Melore.Cli -c Release
 
 `search` / `references` / `explain` は実行前に `git status --porcelain`（未追跡を含む）を見る。include / exclude に合う差分が 32 件以内ならそのファイルだけ再索引する。超えた場合は再索引せず、検索は続行する。`trace` と `eval` はこの更新をしない。
 
+`.gitignore` の対象になっているファイル（Statevia の `.spec/` など）は `git status --porcelain` に出ないため、この自動の再索引では拾われない。編集や archive への移動は、次に `index` を実行するまで反映されない。
+
 ## 2. 共通オプション
 
 | オプション | 既定 | 説明 |
 | --- | --- | --- |
 | `--config <file>` | なし（必須） | `melore.json` のパス |
 | `--limit <n>` | `8` | `search` / `references` / `explain` / `eval` の件数。`trace` では別の既定（64） |
+| `--scope <scope>` | `current` | `search` / `explain` の検索スコープ。`current`（現行だけ）、`history`（完了・却下した履歴文書だけ）、`all`（すべて）。大文字小文字は区別しない。それ以外の値はパースエラーになり、許可値と使い方を出して終了コード 1 |
 
 `explain` の件数は 1 から 8 に丸める。`search` が返すヒットは最大 32 件。`trace` の深さは 1 から 6 に丸める。
 
@@ -79,7 +82,10 @@ dotnet publish src/Melore.Cli -c Release
 ```powershell
 ..\artifacts\melore\melore.exe search "Fork Join の親子" --config ..\melore.json
 ..\artifacts\melore\melore.exe search "ExecutionEngine" --config ..\melore.json --limit 16
+..\artifacts\melore\melore.exe search "ノード ID を 12 桁の 16 進にした理由" --config ..\melore.json --scope history
 ```
+
+`--scope history` は、`melore.json` の `history` に当たる履歴文書だけを検索する。決めた理由や却下した理由を調べるときに使う。絞り込みは全文・シンボル・ベクトルのそれぞれで候補を取る段階で行うので、既定のスコープの順位は履歴文書の件数に押されない。
 
 最初の 1 行。`\t` はタブ。
 
@@ -90,9 +96,11 @@ dirty\t<true|false>\tfiles\t<差分ファイル数>\trefreshed\t<今回索引し
 `dirty` が true のときは差分が 32 件を超え、索引は古いまま。続く各ヒットは 2 行。
 
 ```text
-<Kind>\t<path>:<start>-<end>\t<title>
+<Kind>\t<path>:<start>-<end>\t<title>[\t<lifecycle>]
   <snippet>
 ```
+
+`lifecycle` は区分が `current` 以外（`archived` / `rejected`）のときだけ付く。現行だけの出力は従来と同じ形。
 
 0 件のときは `ヒットなし`。終了コードは 0。
 
@@ -108,10 +116,10 @@ dirty\t<true|false>\tfiles\t<差分ファイル数>\trefreshed\t<今回索引し
 1 行が 1 件。`\t` はタブ。
 
 ```text
-<basis>\t<relType>\t<path>:<start>\t<title>
+<basis>\t<relType>\t<path>:<start>\t<title>[\t<lifecycle>]
 ```
 
-`basis` は `explicit` または `inferred`。終了コードは 0。
+`basis` は `explicit` または `inferred`。関係をたどった先が履歴文書なら、行末に区分が付く。終了コードは 0。
 
 ### trace
 
@@ -144,7 +152,10 @@ root\t<name>\t<path>:<start>
 ```powershell
 ..\artifacts\melore\melore.exe explain "Join で枝が書いた vars を親へ戻す規則" --config ..\melore.json
 ..\artifacts\melore\melore.exe explain "Fork Join の親子" --config ..\melore.json --limit 4
+..\artifacts\melore\melore.exe explain "型付きの識別子キーを採用しなかった理由" --config ..\melore.json --scope history
 ```
+
+`--scope` は根拠を取る検索のスコープ。既定は `current`。
 
 `\t` はタブ。
 
@@ -153,14 +164,14 @@ root\t<name>\t<path>:<start>
 limitation\t<不足があれば>
 chat\t<true|false>\t<model>
 evidence_ids\t<id,id,...>
-<Kind>\t<path>:<start>-<end>\t<title>
+<Kind>\t<path>:<start>-<end>\t<title>[\t<lifecycle>]
 ```
 
 根拠行に本文は出さない。終了コードは 0。
 
 ### eval
 
-調整用（dev、ゴールデン 15 件）と検証用（test、自然文 27 件。未追跡ファイル依存の H12 は含まない）の Hit@1 と Hit@8 を測る。差分の自動索引はしない。測る前に `index` する。
+調整用（dev、ゴールデン 15 件）と検証用（test、自然文 27 件。未追跡ファイル依存の H12 は含まない）の Hit@1 と Hit@8 を、既定のスコープ（`current`）で測る。あわせて経緯の質問（history、14 件）を `history` スコープで測る。差分の自動索引はしない。測る前に `index` する。
 
 ```powershell
 ..\artifacts\melore\melore.exe eval --config ..\melore.json
@@ -170,13 +181,13 @@ evidence_ids\t<id,id,...>
 セットごとに次の形。`\t` はタブ。
 
 ```text
-<dev|test>\thit_at_1\t<0.000>
-<dev|test>\thit_at_8\t<0.000>
-<dev|test>\t<id>\t<HIT|MISS>\t<query>
+<dev|test|history>\thit_at_1\t<0.000>
+<dev|test|history>\thit_at_8\t<0.000>
+<dev|test|history>\t<id>\t<HIT|MISS>\t<query>
   <miss のとき上位パス。最大 8 行>
 ```
 
-test の Hit@8 が 0.93 未満、または Hit@1 が 0.65 未満のとき終了コード 1。それ以外は 0。
+test の Hit@8 が 0.93 未満、または Hit@1 が 0.65 未満のとき終了コード 1。それ以外は 0。history は参考値で、終了コードに影響しない。`history` を設定していない索引では 0 になる。
 
 ## 4. 設定ファイル
 
@@ -193,5 +204,11 @@ test の Hit@8 が 0.93 未満、または Hit@1 が 0.65 未満のとき終了�
 | `ollama.endpoint` | 既定 `http://localhost:11434` |
 | `ollama.embeddingModel` | 既定 `qwen3-embedding:0.6b` |
 | `ollama.chatModel` | 既定 `qwen3.5:9b-q4_K_M`。`explain` で使う |
+| `history.archived` | 完了して移された文書の glob。例: `.spec/archive/**`。当たるファイルの区分は `archived` |
+| `history.rejected` | 却下して移された文書の glob。例: `.spec/reject/**`。当たるファイルの区分は `rejected` |
+
+`history` は任意。省くと全ファイルの区分が `current` になり、`--scope history` のヒットは空になる。glob は include と同じ書式で、include / exclude で索引に入ったファイルにだけ効く。各 64 件まで、1 件 256 文字まで。空文字・絶対パス・`..` は起動時にエラーにする。同じファイルが `archived` と `rejected` の両方に当たると、そのファイルを列挙・再索引する時点（`index`、または検索前の自動の再索引）でエラーにする。
+
+区分はパスだけで決め、文書のヘッダーにある状態は見ない。glob を変えて `index` すると、ファイルを解析し直さずに区分だけを付け直す。
 
 Ollama が止まっていても `index` の解析と、FTS・シンボルの `search` は動く。ベクトル検索と `explain` の文章生成だけが使えない。

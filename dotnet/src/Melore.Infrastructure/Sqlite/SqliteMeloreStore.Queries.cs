@@ -19,7 +19,7 @@ public sealed partial class SqliteMeloreStore
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = """
             SELECT s.id, s.fqn, COALESCE(s.documentation_comment, s.signature, s.fqn),
-                   s.start_line, s.end_line, f.path, r.indexed_revision
+                   s.start_line, s.end_line, f.path, r.indexed_revision, f.lifecycle
             FROM symbols s
             JOIN files f ON f.id = s.file_id
             JOIN repositories r ON r.id = f.repository_id
@@ -68,7 +68,7 @@ public sealed partial class SqliteMeloreStore
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = """
             SELECT s.id, s.fqn, COALESCE(s.documentation_comment, s.signature, s.fqn),
-                   s.start_line, s.end_line, f.path, r.indexed_revision
+                   s.start_line, s.end_line, f.path, r.indexed_revision, f.lifecycle
             FROM symbols s
             JOIN files f ON f.id = s.file_id
             JOIN repositories r ON r.id = f.repository_id
@@ -87,7 +87,7 @@ public sealed partial class SqliteMeloreStore
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = """
             SELECT s.id, s.fqn, COALESCE(s.documentation_comment, s.signature, s.fqn),
-                   s.start_line, s.end_line, f.path, r.indexed_revision
+                   s.start_line, s.end_line, f.path, r.indexed_revision, f.lifecycle
             FROM tests t
             JOIN symbols s ON s.id = t.symbol_id
             JOIN files f ON f.id = s.file_id
@@ -105,7 +105,7 @@ public sealed partial class SqliteMeloreStore
     {
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = """
-            SELECT c.id, c.heading_path, c.text, c.start_line, c.end_line, f.path, r.indexed_revision
+            SELECT c.id, c.heading_path, c.text, c.start_line, c.end_line, f.path, r.indexed_revision, f.lifecycle
             FROM document_chunks c
             JOIN documents d ON d.id = c.document_id
             JOIN files f ON f.id = d.file_id
@@ -165,7 +165,7 @@ public sealed partial class SqliteMeloreStore
     {
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = """
-            SELECT c.id, c.heading_path, c.text, c.start_line, c.end_line, f.path, r.indexed_revision
+            SELECT c.id, c.heading_path, c.text, c.start_line, c.end_line, f.path, r.indexed_revision, f.lifecycle
             FROM document_chunks c
             JOIN documents d ON d.id = c.document_id
             JOIN files f ON f.id = d.file_id

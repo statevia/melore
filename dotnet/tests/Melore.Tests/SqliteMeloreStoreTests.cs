@@ -1,3 +1,4 @@
+using Melore.Contracts;
 using Melore.Core.Models;
 using Melore.Infrastructure.Sqlite;
 
@@ -5,6 +6,8 @@ namespace Melore.Tests;
 
 public sealed class SqliteMeloreStoreTests
 {
+    private static readonly HashSet<DocumentLifecycle> CurrentOnly = [DocumentLifecycle.Current];
+
     /// <summary>チャンクを入れて FTS で取り出せる。</summary>
     [Fact]
     public void SearchFullText_FindsIndexedHeading()
@@ -28,7 +31,7 @@ public sealed class SqliteMeloreStoreTests
             "deadbeef");
 
         // Act
-        var hits = store.SearchFullText("Fork Join", 8);
+        var hits = store.SearchFullText("Fork Join", 8, CurrentOnly);
 
         // Assert
         var hit = Assert.Single(hits);
@@ -84,8 +87,8 @@ public sealed class SqliteMeloreStoreTests
             "deadbeef");
 
         // Act
-        var dollarVars = store.SearchFullText("$.vars", 8);
-        var varsOnly = store.SearchFullText("vars", 8);
+        var dollarVars = store.SearchFullText("$.vars", 8, CurrentOnly);
+        var varsOnly = store.SearchFullText("vars", 8, CurrentOnly);
 
         // Assert
         Assert.Equal("\"$\" AND \"vars\"", SqliteMeloreStore.ToFtsQuery("$.vars"));
@@ -113,7 +116,7 @@ public sealed class SqliteMeloreStoreTests
             "rev");
 
         // Act
-        var hits = store.SearchFullText("Fork Join の", 8);
+        var hits = store.SearchFullText("Fork Join の", 8, CurrentOnly);
 
         // Assert
         Assert.Contains(hits, h => h.Source.Path.Contains("fork-join", StringComparison.Ordinal));

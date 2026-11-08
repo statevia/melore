@@ -41,6 +41,8 @@ public sealed class MeloreCli(TextWriter output)
         Description = "関係種別。カンマ区切り。空なら全部"
     };
 
+    private readonly Option<string?> _scope = CreateScopeOption();
+
     private readonly Argument<string> _query = new("query")
     {
         Description = "自然言語またはキーワード"
@@ -85,6 +87,7 @@ public sealed class MeloreCli(TextWriter output)
         var command = new Command("search", "仕様とコードを検索する");
         command.Options.Add(_config);
         command.Options.Add(_limit);
+        command.Options.Add(_scope);
         command.Arguments.Add(_query);
         command.SetAction((parse, ct) => RunSearchAsync(parse, ct));
         return command;
@@ -117,6 +120,7 @@ public sealed class MeloreCli(TextWriter output)
         var command = new Command("explain", "検索上位だけを根拠に説明する");
         command.Options.Add(_config);
         command.Options.Add(_limit);
+        command.Options.Add(_scope);
         command.Arguments.Add(_query);
         command.SetAction((parse, ct) => RunExplainAsync(parse, ct));
         return command;
@@ -157,11 +161,11 @@ public sealed class MeloreCli(TextWriter output)
         var freshness = await host.Indexer.EnsureFreshAsync(settings, cancellationToken).ConfigureAwait(false);
         await output.WriteLineAsync(
             $"dirty\t{freshness.Dirty}\tfiles\t{freshness.DirtyFileCount}\trefreshed\t{freshness.RefreshedFileCount}").ConfigureAwait(false);
-        var hits = await host.Search.SearchAsync(query, limit, cancellationToken).ConfigureAwait(false);
+        var hits = await host.Search.SearchAsync(query, limit, GetScope(parse), cancellationToken).ConfigureAwait(false);
         foreach (var hit in hits)
         {
             await output.WriteLineAsync(
-                $"{hit.Kind}\t{hit.Source.Path}:{hit.Source.StartLine}-{hit.Source.EndLine}\t{hit.Title}").ConfigureAwait(false);
+                $"{hit.Kind}\t{hit.Source.Path}:{hit.Source.StartLine}-{hit.Source.EndLine}\t{hit.Title}{LifecycleSuffix(hit.Lifecycle)}").ConfigureAwait(false);
             await output.WriteLineAsync($"  {hit.Snippet}").ConfigureAwait(false);
         }
 
@@ -182,7 +186,7 @@ public sealed class MeloreCli(TextWriter output)
         foreach (var related in host.References.GetReferences(target, parse.GetValue(_limit)))
         {
             await output.WriteLineAsync(
-                $"{related.Basis}\t{related.RelType}\t{related.Hit.Source.Path}:{related.Hit.Source.StartLine}\t{related.Hit.Title}").ConfigureAwait(false);
+                $"{related.Basis}\t{related.RelType}\t{related.Hit.Source.Path}:{related.Hit.Source.StartLine}\t{related.Hit.Title}{LifecycleSuffix(related.Hit.Lifecycle)}").ConfigureAwait(false);
         }
 
         return 0;
@@ -231,7 +235,7 @@ public sealed class MeloreCli(TextWriter output)
         var limit = parse.GetValue(_limit);
         await using var host = CreateRuntime(settings);
         await host.Indexer.EnsureFreshAsync(settings, cancellationToken).ConfigureAwait(false);
-        var result = await host.Explain.ExplainAsync(query, limit, cancellationToken).ConfigureAwait(false);
+        var result = await host.Explain.ExplainAsync(query, limit, GetScope(parse), cancellationToken).ConfigureAwait(false);
         await output.WriteLineAsync(result.Answer).ConfigureAwait(false);
         if (result.Limitation is not null)
         {
@@ -242,7 +246,8 @@ public sealed class MeloreCli(TextWriter output)
         await output.WriteLineAsync($"evidence_ids\t{string.Join(",", result.EvidenceIds)}").ConfigureAwait(false);
         foreach (var hit in result.Evidence)
         {
-            await output.WriteLineAsync($"{hit.Kind}\t{hit.Path}:{hit.StartLine}-{hit.EndLine}\t{hit.Title}").ConfigureAwait(false);
+            var suffix = hit.Lifecycle == LifecycleText.ToText(DocumentLifecycle.Current) ? "" : "\t" + hit.Lifecycle;
+            await output.WriteLineAsync($"{hit.Kind}\t{hit.Path}:{hit.StartLine}-{hit.EndLine}\t{hit.Title}{suffix}").ConfigureAwait(false);
         }
 
         return 0;
@@ -258,10 +263,39 @@ public sealed class MeloreCli(TextWriter output)
             .ConfigureAwait(false);
         PrintEval(bundle.Dev);
         PrintEval(bundle.Test);
+        PrintEval(bundle.History);
         var failed = bundle.Test.HitAt8 < EvalService.TestHitAt8Threshold
                      || bundle.Test.HitAt1 < EvalService.TestHitAt1Threshold;
         return failed ? 1 : 0;
     }
+
+    /// <summary>
+    /// <c>--scope</c>。許可値以外はパース時の検証で弾くので、実行時に解釈が失敗することはない。
+    /// </summary>
+    private static Option<string?> CreateScopeOption()
+    {
+        var option = new Option<string?>("--scope")
+        {
+            Description = "検索スコープ（" + LifecycleText.AllowedScopes + "）。既定は current。経緯を調べるときは history"
+        };
+        option.Validators.Add(result =>
+        {
+            if (!LifecycleText.TryParseScope(result.GetValueOrDefault<string?>(), out _))
+            {
+                result.AddError("--scope は " + LifecycleText.AllowedScopes + " のどれかを指定してください。");
+            }
+        });
+        return option;
+    }
+
+    private SearchScope GetScope(ParseResult parse)
+        => LifecycleText.TryParseScope(parse.GetValue(_scope), out var scope)
+            ? scope
+            : throw new InvalidOperationException("--scope は検証済みのはずです。");
+
+    /// <summary>現行以外のヒットだけ、行末に区分を足す。現行だけの出力は従来と同じ形に保つ。</summary>
+    private static string LifecycleSuffix(DocumentLifecycle lifecycle)
+        => lifecycle == DocumentLifecycle.Current ? "" : "\t" + LifecycleText.ToText(lifecycle);
 
     private static MeloreRuntime CreateRuntime(MeloreSettings settings)
     {

@@ -56,6 +56,12 @@ public sealed class IndexService(
         var (parsed, skipped) = await IndexChangedAsync(files, previous, revision, cancellationToken)
             .ConfigureAwait(false);
 
+        // 区分は中身に依存しないので、解析の差分とは別に全ファイルを付け直す。
+        // history の glob を変えただけなら、再解析も再埋め込みも起きない。
+        // 失敗したら例外のまま抜け、CompleteIndex を呼ばない（世代を進めない）。
+        var relabeled = store.UpdateLifecycles(
+            files.ToDictionary(f => f.RelativePath, f => f.Lifecycle, StringComparer.OrdinalIgnoreCase));
+
         var related = RelationshipIndexer.Rebuild(store);
         await ApplySemanticGraphAsync(settings, cancellationToken).ConfigureAwait(false);
         if (embeddings.IsAvailable)
@@ -65,10 +71,11 @@ public sealed class IndexService(
 
         store.CompleteIndex(settings.RepositoryName, settings.RepositoryPath, revision, AnalyzerVersions);
         logger.LogInformation(
-            "Index finished. parsed={Parsed} skipped={Skipped} deleted={Deleted} related={Related} analyzerChanged={AnalyzerChanged} revision={Revision}",
+            "Index finished. parsed={Parsed} skipped={Skipped} deleted={Deleted} relabeled={Relabeled} related={Related} analyzerChanged={AnalyzerChanged} revision={Revision}",
             parsed,
             skipped,
             deleted,
+            relabeled,
             related,
             analyzerChanged,
             revision);
