@@ -3,8 +3,8 @@
 | 項目 | 値 |
 | --- | --- |
 | 種別 | Architecture |
-| Version | 0.2 |
-| 更新日 | 2026-11-08 |
+| Version | 0.3 |
+| 更新日 | 2026-11-09 |
 
 ## 1. 位置づけ
 
@@ -18,7 +18,7 @@
    ├ Query services (search / references / trace / explain)
    ├ Indexers (Markdown / Roslyn / Git)
    ├ Providers (FTS / Vector / LLM / Embedding / Rerank)
-   └ SQLite (metadata + FTS5 + sqlite-vec)
+   └ SQLite (metadata + FTS5 + ベクトル BLOB)
         │ 読み取りのみ
         ▼
 [対象 Git リポジトリ]  例: melore.json の repositoryPath
@@ -47,7 +47,7 @@ Ollama は別プロセス（既存のローカルデーモン、既定 `http://l
 | --- | --- | --- |
 | `Melore.Contracts` | DTO、ヒット、出典、関係の種別。MCP/CLI 共通 | なし |
 | `Melore.Core` | チャンク化、検索統合、関係解決、鮮度、回答原則 | Contracts |
-| `Melore.Infrastructure` | SQLite、FTS5、sqlite-vec、Git、ファイル I/O | Core のポート |
+| `Melore.Infrastructure` | SQLite、FTS5、ベクトル BLOB、Git、ファイル I/O | Core のポート |
 | `Melore.Parsing.Markdown` | 見出し・行番号付きチャンク | Core のポート |
 | `Melore.Parsing.Roslyn` | シンボル・参照グラフ | Core のポート |
 | `Melore.Providers.Ollama` | Embedding / Chat（OllamaSharp） | Core のポート |
