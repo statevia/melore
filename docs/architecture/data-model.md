@@ -3,10 +3,10 @@
 | 項目 | 値 |
 | --- | --- |
 | 種別 | Architecture |
-| Version | 0.2 |
-| 更新日 | 2026-11-08 |
+| Version | 0.3 |
+| 更新日 | 2026-11-09 |
 
-永続化は SQLite 1 ファイル。ベクトルは `sqlite-vec` の仮想テーブルに分離する。
+永続化は SQLite 1 ファイル。ベクトルは `embeddings` テーブルの BLOB に置き、検索時に C# で全件のコサイン類似度を取る（ADR-005）。
 
 ## 1. 識別子
 
@@ -143,14 +143,15 @@ Markdown ファイル単位のメタ。
 
 コミットメッセージ全文の永久保存はしない。必要なら `git log` をその場で読む。
 
-### embeddings / vec_chunks
+### embeddings
 
 | 列 | 内容 |
 | --- | --- |
-| chunk_ref | `document_chunk:{id}` または `symbol:{id}` |
+| chunk_id | 文書チャンクまたはシンボルの ID |
+| kind | `document_chunk` / `symbol` |
 | model | 例: `qwen3-embedding:0.6b` |
 | dim | 1024 |
-| embedding | `vec0` 仮想テーブル側 |
+| vector | float32 の BLOB |
 
 シンボルのベクトル化テキストは型名と `<summary>` / `<remarks>` とする。メソッド本体全文は埋め込まない。テストメソッドは埋め込み対象にしない。
 
