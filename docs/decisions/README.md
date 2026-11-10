@@ -3,10 +3,10 @@
 | 項目 | 値 |
 | --- | --- |
 | 種別 | Decision |
-| Version | 0.2 |
-| 更新日 | 2026-11-09 |
+| Version | 0.3 |
+| 更新日 | 2026-11-10 |
 
-各判断は採用・代替・制約をセットで書く。事実は 2026-11-02 時点の公開情報。
+各判断は採用・代替・制約をセットで書く。事実は 2026-11-02 時点の公開情報。採用の欄は計画時点の判断で、実装がそこから変わった ADR には **実装** の段落を足してある。
 
 ## ADR-001: 独立リポジトリとして Melore に置く
 
@@ -60,6 +60,8 @@
 
 **実測（2026-11-09、Windows 11、x64）:** NuGet が出力する `runtimes/win-x64/native/vec0.dll`（`v0.1.7-alpha.2.1`）は、SQLite 3.50.4 から `load_extension` で読め、`vec_version()` が返った。ただし現行の実装は `vec0` 仮想テーブルを使っていない。埋め込みは `embeddings` テーブルの BLOB に置き、検索時に C# で全件のコサイン類似度を取る（代替のブルートフォース）。Statevia の規模（埋め込み 8,304 件。履歴文書なし）では、これで足りている。`SqliteVecLoader` はロードを試すが、結果を検索に使っていない。
 
+**実測（2026-11-10）:** 履歴文書を入れた索引（埋め込み 16,802 件）で、既定のスコープが走査する 8,304 件の読み出しとコサイン類似度の計算は 1 回 0.14〜0.21 秒。クエリの埋め込みは 0.02〜0.08 秒。
+
 ## ADR-006: C# 解析は Roslyn。Tree-sitter は今やらない
 
 **採用:** `Microsoft.CodeAnalysis.Workspaces.MSBuild` で `dotnet/statevia.sln` を開く。
@@ -70,6 +72,8 @@
 
 **制約:** ソリューション全体のコンパイルは重い。差分更新では変更ファイルと依存プロジェクトに限定する。生成コード・Source Generator 出力は除外設定を持つ。解析には MSBuild と対象 SDK が要る。
 
+**実装:** 解析は 2 段に分けた。シンボルとテストは `RoslynSyntaxAnalyzer` がファイル単位の構文解析で取り、ソリューションも SDK も要らない。`calls` と `implements` だけ `RoslynSemanticGraph` が `MSBuildWorkspace` でソリューションを開いて取る。開けなければこの 2 種が空になるだけで `index` は続く。意味解析は差分に限定しておらず、`index` のたびにソリューション全体を読んで `calls` / `implements` を全件入れ替える。継承（`inherits`）は構文から名前だけを取るので推定扱い。
+
 ## ADR-007: Embedding は Ollama `qwen3-embedding:0.6b`
 
 **採用:** 公式タグ `qwen3-embedding:0.6b`（639MB、32K コンテキスト、`/api/embed`）。論理モデルは HF `Qwen/Qwen3-Embedding-0.6B`（次元最大 1024、Instruction Aware）。
@@ -79,6 +83,9 @@
 **代替:** `qwen3-embedding:4b`（2.5GB）は精度向上の余地があるが、インデックス時間と VRAM が増える。初期は 0.6B。`latest` は 8b（4.7GB）を指すため、タグを `0.6b` に固定する。
 
 **制約:** クエリ側は Instruction 付き、ドキュメント側は無し、が推奨。Ollama の embed API が instruction をどう渡すかは実装スパイクで確認し、未対応ならテキスト前に `Instruct: ...\nQuery:` を前置する。次元変更は全件再 embed。
+
+**実装:** クエリ側だけ、テキストの前に `Instruct: Given a search query, retrieve relevant specification and code passages
+Query:` を前置する（`OllamaEmbeddingClient`）。文書側には付けない。
 
 ## ADR-008: 生成は Ollama `qwen3.5:9b-q4_K_M`（Phase 3）
 
@@ -116,6 +123,8 @@
 
 **制約:** stdio ではログを stdout に出さない（SDK 案内どおり stderr）。Cursor の `mcp.json` は Melore リポジトリ側にサンプルを置く。Statevia の `.cursor/mcp.json` を Melore 実装時まで変更しない。
 
+**実装:** Statevia 側の MCP 設定（`.cursor/mcp.json` / `.mcp.json`）が、同じ親フォルダの `../Melore` にある発行済みの `artifacts/melore-mcp/melore-mcp.exe` を起動する。サンプルは `samples/cursor-mcp.json.example`。
+
 ## ADR-011: Git 操作
 
 **採用:** 差分判定は `git rev-parse HEAD`、`git ls-files -s`、必要なら `git diff --name-only` をプロセス呼び出し。オブジェクト読みはワークツリーのファイル I/O。
@@ -126,6 +135,8 @@
 
 **制約:** 対象に Git が必要。未コミット変更はワークツリーのハッシュで dirty として再インデックスする。
 
+**実装:** `git ls-files` は使っていない。ファイルの列挙は include / exclude の glob で作業ツリーを走査し（未追跡と `.gitignore` の対象も入る）、内容のハッシュは `git hash-object --stdin-paths` で取る。リネームは `git diff --name-status -M90`、検索前の差分検知は `git status --porcelain --untracked-files=all`。
+
 ## ADR-012: Markdown パーサ
 
 **採用:** 見出し（ATX）でセクション分割し、行番号を自前で数える。CommonMark の完全実装より「行番号が正しいこと」を優先。必要なら Markdig で見出しとリンクを補助取得する。
@@ -135,6 +146,8 @@
 **代替:** ファイル全体を 1 チャンク。Statevia の仕様書は長く、LLM とベクトルの両方に不適。
 
 **制約:** Setext 見出し、YAML front matter、HTML 混在は Phase 1 で簡易対応（front matter はスキップ、HTML はテキスト扱い）。
+
+**実装:** Markdig は使っていない。`MarkdownDocumentParser` が行を自前で読む。
 
 ## ADR-013: テスト検出
 

@@ -1,6 +1,7 @@
 using Melore.Contracts;
 using Melore.Core.Models;
 using Melore.Infrastructure.Sqlite;
+using Microsoft.Data.Sqlite;
 
 namespace Melore.Tests;
 
@@ -39,6 +40,46 @@ public sealed class SqliteMeloreStoreTests
         Assert.Equal(10, hit.Source.StartLine);
         Assert.Equal(20, hit.Source.EndLine);
         Assert.Contains("親 graph", hit.Snippet, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// symbols.file_id のインデックスが無い既存の DB を開くと、インデックスが足される。
+    /// 無いとシンボル名の検索がファイルごとの全件走査になる。
+    /// </summary>
+    [Fact]
+    public void Initialize_ExistingDatabaseWithoutSymbolFileIndex_CreatesIndex()
+    {
+        // Arrange
+        var db = Path.Combine(Path.GetTempPath(), "melore-tests", Guid.NewGuid().ToString("N") + ".db");
+        using (var store = new SqliteMeloreStore(db, "fixture", "C:\\tmp\\fixture"))
+        {
+            store.Initialize();
+        }
+
+        SqliteConnection.ClearAllPools();
+        using (var connection = new SqliteConnection("Data Source=" + db))
+        {
+            connection.Open();
+            using var drop = connection.CreateCommand();
+            drop.CommandText = "DROP INDEX idx_symbols_file;";
+            drop.ExecuteNonQuery();
+        }
+
+        SqliteConnection.ClearAllPools();
+
+        // Act
+        using (var reopened = new SqliteMeloreStore(db, "fixture", "C:\\tmp\\fixture"))
+        {
+            reopened.Initialize();
+        }
+
+        // Assert
+        SqliteConnection.ClearAllPools();
+        using var verify = new SqliteConnection("Data Source=" + db);
+        verify.Open();
+        using var read = verify.CreateCommand();
+        read.CommandText = "SELECT COUNT(*) FROM pragma_index_list('symbols') WHERE name = 'idx_symbols_file';";
+        Assert.Equal(1L, read.ExecuteScalar());
     }
 
     /// <summary>blob SHA が同じなら差分対象から除外できる。</summary>

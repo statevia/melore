@@ -3,8 +3,8 @@
 | 項目 | 値 |
 | --- | --- |
 | 種別 | Requirements |
-| Version | 0.1 |
-| 更新日 | 2026-11-02 |
+| Version | 0.2 |
+| 更新日 | 2026-11-10 |
 
 ## 1. 目的
 
@@ -79,7 +79,7 @@ YAML 定義（Statevia の Definition）は初期は対象外。ドキュメン�
 
 単一コーパス内の文章類似だけでなく、関連する実装・テスト・仕様を横断して返す。
 
-Reranker は Phase 3 以降。Ollama 公式の rerank API が無いため、初期は Reciprocal Rank Fusion（RRF）で統合し、専用 rerank は交換可能なポートとして残す。根拠は [decisions/README.md](decisions/README.md) ADR-005。
+Reranker は Phase 3 以降。Ollama 公式の rerank API が無いため、初期は Reciprocal Rank Fusion（RRF）で統合し、専用 rerank は交換可能なポートとして残す。根拠は [decisions/README.md](decisions/README.md) ADR-009。
 
 ### 4.4 提供 API（MVP）
 
@@ -123,9 +123,9 @@ CLI はインデックス構築・更新・ステータス表示を Phase 1 か�
 | 生成モデル | Ollama 公式 `qwen3.5:9b-q4_K_M` が存在する。重み 6.6GB、パラメータ 8.95B、量子化 Q4_K_M、コンテキスト表示 256K。`qwen3.5:9b` は latest と同一タグで 6.6–7.6GB（ビジョン projector を含む構成） | テキスト用途では明示タグ `qwen3.5:9b-q4_K_M` を初期採用。256K をフルに使うと KV キャッシュで 16GB を超えるため、explain は短いコンテキストに制限する |
 | Embedding | Ollama 公式 `qwen3-embedding:0.6b`（639MB、32K、`/api/embed`）。HF `Qwen/Qwen3-Embedding-0.6B` は次元最大 1024、MRL 対応、Instruction Aware | Phase 1 から採用。次元は 1024 を既定とし、変更時はインデックス再構築 |
 | Reranker | HF に `Qwen/Qwen3-Reranker-0.6B` はある。Ollama 公式ライブラリに reranker モデルはなく、`/api/rerank` も未提供（issue #3368 / #10989。メンテナコメントで API 未サポート） | Phase 3 で `IReranker` を置くが、既定実装は RRF。専用モデルは Ollama 外ランタイムが必要になった時点で追加 |
-| ベクトル SQLite | `sqlite-vss` は開発停止で Windows 非対応。後継 `sqlite-vec` は純 C、Windows 対応。NuGet `sqlite-vec` 0.1.7-alpha.2.1（プレリリース）。CommunityToolkit.VectorData.SqliteVec もプレビュー | Phase 1 は `sqlite-vec` を採用し、ロード失敗時の検証を計画に含める |
+| ベクトル SQLite | `sqlite-vss` は開発停止で Windows 非対応。後継 `sqlite-vec` は純 C、Windows 対応。NuGet `sqlite-vec` 0.1.7-alpha.2.1（プレリリース）。CommunityToolkit.VectorData.SqliteVec もプレビュー | Phase 1 は `sqlite-vec` を採用し、ロード失敗時の検証を計画に含める。実装は `vec0` を使わず、BLOB の全件走査にした（ADR-005 の実測） |
 | MCP | 公式 C# SDK `ModelContextProtocol` 2.3.0。stdio は本パッケージ、HTTP は `ModelContextProtocol.AspNetCore` | Phase 2 は stdio（Cursor 向け）。HTTP は初期対象外 |
-| Ollama .NET | `Microsoft.Extensions.AI.Ollama` は非推奨。`OllamaSharp` が `IChatClient` / `IEmbeddingGenerator` を実装 | LLM・Embedding のアダプタは OllamaSharp + MEAI 抽象 |
+| Ollama .NET | `Microsoft.Extensions.AI.Ollama` は非推奨。`OllamaSharp` が `IChatClient` / `IEmbeddingGenerator` を実装 | LLM・Embedding のアダプタは OllamaSharp + MEAI 抽象。MEAI の型は `Melore.Providers.Ollama` の中だけで使い、Core のポートは Melore 独自のインターフェースにした |
 
 VRAM 概算（16GB、同時ロード時）:
 
