@@ -28,3 +28,7 @@ Melore MCP は対象リポジトリ側の MCP 設定から起動します。Stat
 ## 開発
 
 .NET 10 SDK が必要です。CLI は `dotnet publish src/Melore.Cli -c Release`（`dotnet/` から）で `artifacts/melore/melore.exe` に、MCP は `dotnet publish src/Melore.Mcp -c Release` で `artifacts/melore-mcp/melore-mcp.exe` に出ます。詳細は [AGENTS.md](AGENTS.md) を参照してください。
+
+## ライセンス
+
+[MIT License](LICENSE) で公開しています。
