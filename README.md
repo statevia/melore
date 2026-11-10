@@ -14,9 +14,11 @@
 | [docs/architecture/overview.md](docs/architecture/overview.md) | アーキテクチャ |
 | [docs/architecture/data-model.md](docs/architecture/data-model.md) | データモデル |
 | [docs/decisions/README.md](docs/decisions/README.md) | 技術選定 ADR |
-| [docs/guides/implementation-plan.md](docs/guides/implementation-plan.md) | Phase 1–4 実装計画 |
+| [docs/guides/implementation-plan.md](docs/guides/implementation-plan.md) | Phase 1–4 実装計画と現状 |
+| [docs/guides/cli.md](docs/guides/cli.md) | CLI のコマンドと出力 |
 | [docs/guides/mcp-tool-candidates.md](docs/guides/mcp-tool-candidates.md) | MCP ツール追加候補 |
 | [docs/guides/search-gaps.md](docs/guides/search-gaps.md) | 検索漏れと対応 |
+| [docs/guides/agent-task-accuracy-plan.md](docs/guides/agent-task-accuracy-plan.md) | エージェントのタスク精度の計測と改善計画 |
 | [docs/evaluation.md](docs/evaluation.md) | 評価方法と受け入れ基準 |
 
 ## MCP

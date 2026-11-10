@@ -1150,6 +1150,10 @@ public sealed partial class SqliteMeloreStore : IMeloreStore
             success INTEGER NOT NULL,
             error TEXT
         );
+        -- シンボル名の部分一致は files を区分で絞ってから symbols を引く。このインデックスが無いと
+        -- ファイルごとに symbols を全件走査する（Statevia で 1 回 3〜15 秒。実測 2026-11-10）。
+        -- 列は初版からあるので、版を上げずに既存の DB にも足す。
+        CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols (file_id);
         """;
 
     private const string FtsCreateSql = """
