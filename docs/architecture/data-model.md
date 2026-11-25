@@ -4,7 +4,7 @@
 | --- | --- |
 | 種別 | Architecture |
 | Version | 0.4 |
-| 更新日 | 2026-11-10 |
+| 更新日 | 2026-11-23 |
 
 永続化は SQLite 1 ファイル。ベクトルは `embeddings` テーブルの BLOB に置き、検索時に C# で全件のコサイン類似度を取る（ADR-005）。
 
@@ -161,7 +161,7 @@ Statevia（2026-11-09 の索引）では 16,802 件（文書チャンク 10,724�
 
 ### mcp_invocations
 
-MCP ツール（`search` / `references` / `trace` / `explain`）の引数と応答。知識の検索対象にはしない。CLI は書かない。
+MCP ツール（`search` / `get` / `references` / `trace` / `explain` / `status`）の引数と応答。知識の検索対象にはしない。CLI は書かない。
 
 | 列 | 内容 |
 | --- | --- |
@@ -208,6 +208,8 @@ SearchHit
 MCP と CLI が返すのは、これを平らにした `HitDetail`（`path` / `startLine` / `endLine` / `revision` を直接持ち、`body`・`relType`・`basis` は該当するときだけ付く）。`relType` と `basis` が付くのは `references` のヒット。
 
 MCP 応答は配列を小さく保つ。既定 `limit=8`。`includeBody=true` のときだけチャンク全文。
+
+MCP の `get` は、ヒットの `id` で `HitDetail` を 1 件返す。`id` はファイルを索引し直すたびに振り直す（GUID v7 の 32 文字）ので、索引し直した後の古い `id` は見つからない。そのときはエラーになり、`search` からやり直す。
 
 ## 4. スキーマ進化
 

@@ -127,6 +127,92 @@ public sealed class MeloreToolsTests(MeloreToolsTests.Fixture fixture) : IClassF
         Assert.NotEmpty(result.Evidence);
     }
 
+    /// <summary>search で得た ID を get に渡すと、同じヒットを本文なしで返す。</summary>
+    [Fact]
+    public async Task Get_IdFromSearch_ReturnsSameHitWithoutBody()
+    {
+        // Arrange
+        var tools = fixture.Tools;
+        var expected = (await tools.Search("Engine", limit: 1)).Hits[0];
+
+        // Act
+        var result = await tools.Get(expected.Id);
+
+        // Assert
+        Assert.Equal(expected.Id, result.Hit.Id);
+        Assert.Equal(expected.Path, result.Hit.Path);
+        Assert.Equal(expected.StartLine, result.Hit.StartLine);
+        Assert.Null(result.Hit.Body);
+        Assert.False(result.Dirty);
+    }
+
+    /// <summary>get に includeBody を指定すると本文を返す。</summary>
+    [Fact]
+    public async Task Get_IncludeBody_ReturnsBody()
+    {
+        // Arrange
+        var tools = fixture.Tools;
+        var withBody = (await tools.Search("Engine", limit: 4, includeBody: true)).Hits
+            .First(hit => !string.IsNullOrEmpty(hit.Body));
+
+        // Act
+        var result = await tools.Get(withBody.Id, includeBody: true);
+
+        // Assert
+        Assert.Equal(withBody.Body, result.Hit.Body);
+    }
+
+    /// <summary>索引に無い ID は、取り直しを促す McpException になる。</summary>
+    [Fact]
+    public async Task Get_UnknownId_ThrowsMcpException()
+    {
+        // Arrange
+        var tools = fixture.Tools;
+
+        // Act
+        var error = await Assert.ThrowsAsync<ModelContextProtocol.McpException>(
+            () => tools.Get("00000000000000000000000000000000"));
+
+        // Assert
+        Assert.Contains("search", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>空白だけの ID と長すぎる ID は、索引を引く前に McpException になる。</summary>
+    [Theory]
+    [InlineData(" ")]
+    [InlineData("")]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    public async Task Get_InvalidId_ThrowsMcpException(string id)
+    {
+        // Arrange
+        var tools = fixture.Tools;
+
+        // Act
+        var error = await Assert.ThrowsAsync<ModelContextProtocol.McpException>(() => tools.Get(id));
+
+        // Assert
+        Assert.Contains("64", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>status は索引の件数とリビジョンに、作業ツリーとの差を添えて返す。</summary>
+    [Fact]
+    public async Task Status_ReturnsCountsAndFreshness()
+    {
+        // Arrange
+        var tools = fixture.Tools;
+
+        // Act
+        var result = await tools.Status();
+
+        // Assert
+        Assert.Equal("fixture", result.RepositoryName);
+        Assert.False(string.IsNullOrEmpty(result.IndexedRevision));
+        Assert.True(result.SymbolCount > 0);
+        Assert.True(result.DocumentChunkCount > 0);
+        Assert.False(result.Dirty);
+        Assert.Equal(0, result.RefreshedFileCount);
+    }
+
     /// <summary>失敗したツールも利用ログへ残し、例外はそのまま返す。</summary>
     [Fact]
     public async Task Trace_Failure_IsRecordedAndRethrown()

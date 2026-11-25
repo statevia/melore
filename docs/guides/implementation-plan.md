@@ -4,7 +4,7 @@
 | --- | --- |
 | 種別 | Guide |
 | Version | 0.2 |
-| 更新日 | 2026-11-10 |
+| 更新日 | 2026-11-23 |
 
 §0 から §7 は、実装を始める前（2026-11-02）に決めたリポジトリ構成案と順序で、当時の記述のまま残してある。Phase 1 から 4 の実装は済んでいる。計画から変わった点と残りは [§8](#8-現状2026-11-10)。現行の構成は [architecture/overview.md](../architecture/overview.md) を正とする。
 
@@ -183,7 +183,7 @@ Ollama 実機テストはカテゴリで分離し、CI が GPU を持たない�
 | Phase | 状態 | 計画から変わった点 |
 | --- | --- | --- |
 | 1 インデックスと検索 | 実装済み | ベクトルは `sqlite-vec` の `vec0` を使わず、BLOB の全件走査（S1 はロード成功。ADR-005）。`search` の `--fts` / `--semantic` は作らず、統合検索だけ。シンボルは構文解析で取り、ソリューションを開くのは `calls` / `implements` だけ（S3。ADR-006）。プロジェクトに `Melore.Host` を足した |
-| 2 MCP | 実装済み | `search` の `kinds[]` は未実装。本文の指定は `detail=full` ではなく `includeBody=true`。`search` と `explain` に `scope` を足した |
+| 2 MCP | 実装済み | `search` の `kinds[]` は未実装。本文の指定は `detail=full` ではなく `includeBody=true`。`search` と `explain` に `scope` を足した。`get` と `status` を足した（2026-11-23） |
 | 3 ローカル LLM | 実装済み | Core のポートは `IChatClient` ではなく Melore 独自の `IMeloreChatClient`。chat は `explain` の間だけロードする |
 | 4 精度 | 実装済み。受け入れは未達 | `specifies` は規則だけで作り、LLM の推定は使っていない。矛盾候補は `contradicts`（仕様のバッククォート名が型のメンバーに無い）。n-gram は未導入 |
 

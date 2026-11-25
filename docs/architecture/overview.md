@@ -4,7 +4,7 @@
 | --- | --- |
 | 種別 | Architecture |
 | Version | 0.4 |
-| 更新日 | 2026-11-10 |
+| 更新日 | 2026-11-23 |
 
 ## 1. 位置づけ
 
@@ -14,7 +14,7 @@
         ▼
 [Melore]  ← 起動ごとに単一プロセス
    ├ CLI (index / status / search / references / trace / explain / eval)
-   ├ MCP tools (search / references / trace / explain)
+   ├ MCP tools (search / get / references / trace / explain / status)
    ├ Query services (search / references / trace / explain)
    ├ Indexers (Markdown / Roslyn / Git)
    ├ Providers (Embedding / Chat。Rerank は NoOp)

@@ -3,8 +3,8 @@
 | 項目 | 値 |
 | --- | --- |
 | 種別 | Guide |
-| Version | 0.2 |
-| 更新日 | 2026-11-10 |
+| Version | 0.3 |
+| 更新日 | 2026-11-23 |
 
 Melore MCP を使ったときと使わないときで、エージェントの調査タスクの精度がどう違うかを測った結果と、そこから立てた改善計画。§2 と §3 は 2026-11-04 の計測（コーパスは Statevia、索引 revision `cfa507d3`、作業ツリーに未コミット変更あり）。§1 と §4 は 2026-11-10 の調査（[evaluation.md](../evaluation.md) の §9）で更新した。
 
@@ -72,11 +72,13 @@ grep は H05 / H14 / H15 で 1 件もヒットしなかった（初手の語が�
 | --- | --- | --- | --- |
 | 1 | 修正を Statevia に届ける | `dotnet publish src/Melore.Mcp -c Release` をやり直し、Statevia 側で MCP を再接続する。発行済みの実行ファイルは `idx_symbols_file` を作らない | Statevia から呼んだ `search` の `duration_ms` が 1 秒以下 |
 | 2 | 利用を数え直す | 応答時間を直した後の `mcp_invocations` を日ごと・ツールごとに数える。増えなければ、Statevia のトランスクリプトで、調査の初手に何を使ったかを見る | 調査を含む Statevia セッションの過半が Melore を 1 回以上呼ぶ（P0-1 の受け入れ） |
-| 3 | `get` と `status` を足す | [mcp-tool-candidates.md](mcp-tool-candidates.md) の §2。`search` の snippet で足りないときに、ファイルを読み直さず ID で本文を取れるようにする | `search` → `get` で、検証用タスクの期待箇所の本文に届く |
+| 3 | `get` と `status` を足す（2026-11-23 に済み。下の注） | [mcp-tool-candidates.md](mcp-tool-candidates.md) の §2。`search` の snippet で足りないときに、ファイルを読み直さず ID で本文を取れるようにする | `search` → `get` で、検証用タスクの期待箇所の本文に届く |
 | 4 | dev の期待を決め直す | Q15 はテストの順位下げと引き換えになっている。dev の期待を変えるか、順位下げの条件を変えるかを決める（[search-gaps.md](search-gaps.md) の §4） | dev の Hit@8 ≥ 0.9。test を下げない |
 | 5 | 自然文から識別子へつなぐ（P1-1 の続き） | H01 と H02 が外れたまま。FTS の n-gram 列で日本語本文の部分一致を拾う。シノニム表へは足さない | test の Hit@8 ≥ 0.93、Hit@1 ≥ 0.65 |
 | 6 | `trace` の応答の予算（P1-3 の続き） | メンバーの多い型で `declares` が上限を使い切る。名前の空白を詰める、関係種別ごとに枠を分ける、などで `calls` を先に返す | `trace ExecutionEngine` を depth=2 で呼ぶと、およそ 8KB 以下で `calls` が 1 件以上返る |
 | 7 | E1 | Melore ありとなしで回答の正しさを比べる。3 と 5 の前後で 1 回ずつ | 下の E1 |
+
+3 の結果（2026-11-23、Statevia `6c768dc0` の索引、`dotnet run` で起動した MCP サーバーを stdio で呼んだ）: H03 と H11 で、`search` のヒットの `id` を `get` に渡すと、同じパスと行範囲のヒットが返った。H11 の仕様チャンク（`fork-join.md` の 123〜145 行）は、`includeBody=true` で本文 1,610 文字を返した。シンボルの本文はドキュメントコメントかシグネチャだけで（H03 の `TenantSecretProtector` は 154 文字）、メソッドの実装コードは返さない。コードを読むには、ヒットのパスと行範囲を使ってファイルを読む必要がある。`get` と `status` はどちらも 1 回 0.1〜0.3 秒だった。
 
 専用 Reranker（インターフェースや隣のクラスが実装クラスより上に来る問題の候補）は、5 の後も Hit@1 が届かないときに検討する。Ollama の外にランタイムが要る（ADR-009）。
 
