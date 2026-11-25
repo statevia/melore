@@ -4,7 +4,7 @@
 | --- | --- |
 | 種別 | Requirements |
 | Version | 0.2 |
-| 更新日 | 2026-11-10 |
+| 更新日 | 2026-11-23 |
 
 ## 1. 目的
 
@@ -28,7 +28,7 @@ Melore は既存の AI エージェントを置き換えない。エージェン
 
 | 利用者 | 利用形態 |
 | --- | --- |
-| Cursor 等の AI エージェント | MCP ツール（search / references / trace / explain） |
+| Cursor 等の AI エージェント | MCP ツール（search / get / references / trace / explain / status） |
 | 開発者 | CLI（インデックス構築、検索、状態確認） |
 
 Web UI、マルチテナント、クラウド SaaS は初期対象外。

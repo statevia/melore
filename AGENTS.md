@@ -68,7 +68,7 @@ cd dotnet
 dotnet run --project src/Melore.Mcp -- --config ..\melore.json
 ```
 
-Melore MCP は対象リポジトリ側の MCP 設定から起動する（Statevia の `.cursor/mcp.json` / `.mcp.json` は、同じ親フォルダの `../Melore` を相対パスで参照する）。先に `dotnet publish src/Melore.Mcp -c Release` で発行する。`melore.json.example` を `melore.json` にコピーし、`repositoryPath` を対象クローンの絶対パスにする。ツールは `search` / `references` / `trace` / `explain`。インデックスが無い場合は先に `index` を実行する。
+Melore MCP は対象リポジトリ側の MCP 設定から起動する（Statevia の `.cursor/mcp.json` / `.mcp.json` は、同じ親フォルダの `../Melore` を相対パスで参照する）。先に `dotnet publish src/Melore.Mcp -c Release` で発行する。`melore.json.example` を `melore.json` にコピーし、`repositoryPath` を対象クローンの絶対パスにする。ツールは `search` / `get` / `references` / `trace` / `explain` / `status`。インデックスが無い場合は先に `index` を実行する。
 
 このリポジトリ自身の MCP 設定は [`.cursor/mcp.json`](.cursor/mcp.json)（Cursor。`serena-melore` / `sonarqube` / `github`）と [`.mcp.json`](.mcp.json)（Claude Code。`serena-melore` / `sonarqube`）。どちらも git 管理する。絶対パスと秘密情報を書かない。`sonarqube` は常駐コンテナ（9124 番）に接続し、環境変数 `SONARQUBE_TOKEN` を送る。`github` は `GITHUB_PERSONAL_ACCESS_TOKEN` を使う。
 

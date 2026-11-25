@@ -32,6 +32,12 @@ public sealed class MeloreTools(
     IndexService indexer,
     MeloreSettings settings)
 {
+    /// <summary>
+    /// <c>get</c> が受け付ける ID の最大長。索引の ID は <c>Ids.New</c> の 32 文字（GUID v7 の 16 進）なので、余裕を見て 64 にする。
+    /// 不正な長い入力で利用ログを膨らませないための上限。
+    /// </summary>
+    private const int MaxIdLength = 64;
+
     private static readonly JsonSerializerOptions LogJson = new(JsonSerializerDefaults.Web)
     {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
@@ -63,6 +69,49 @@ public sealed class MeloreTools(
                     freshness.Dirty,
                     freshness.DirtyFileCount,
                     freshness.RefreshedFileCount);
+            },
+            cancellationToken);
+
+    /// <summary>
+    /// search などで得た ID の 1 ヒットを取る。snippet で足りないとき、ファイルを読み直さずに本文を取る。
+    /// </summary>
+    /// <exception cref="McpException">ID が空・長すぎる・索引に無いとき。メッセージに内部情報を含めない。</exception>
+    [McpServerTool(Name = "get", Title = "Get one hit by id")]
+    [Description("After search or references, fetch one hit by its id instead of reading the file again. Default body is a short snippet. Set includeBody=true for the full chunk text (for a symbol, its documentation comment or signature). Ids can change after the file is reindexed; if the id is not found, search again.")]
+    public Task<GetToolResult> Get(
+        [Description("Hit id from search, references, or explain")] string id,
+        [Description("If true, include full chunk text")] bool includeBody = false,
+        CancellationToken cancellationToken = default)
+        => InvokeAsync(
+            "get",
+            new { id, includeBody },
+            async () =>
+            {
+                ValidateId(id);
+                var freshness = await indexer.EnsureFreshAsync(settings, cancellationToken).ConfigureAwait(false);
+                var hit = store.GetHitById(id)
+                    ?? throw new McpException("id に一致するヒットが索引にありません。search をやり直して id を取り直してください。");
+                return new GetToolResult(
+                    HitFormatter.ToDetail(store, hit, includeBody),
+                    freshness.Dirty,
+                    freshness.DirtyFileCount,
+                    freshness.RefreshedFileCount);
+            },
+            cancellationToken);
+
+    /// <summary>
+    /// 索引のリビジョン・件数・作業ツリーとの差を見る。古い索引で調べていないかを確かめる。
+    /// </summary>
+    [McpServerTool(Name = "status", Title = "Show index status")]
+    [Description("Show the indexed revision, counts of document chunks, symbols, and tests, whether semantic search is available, and how far the working tree differs from the index. Use when results look stale or empty. dirty=true means too many changed files to reindex automatically; run melore index from the CLI.")]
+    public Task<StatusToolResult> Status(CancellationToken cancellationToken = default)
+        => InvokeAsync(
+            "status",
+            new { },
+            async () =>
+            {
+                var freshness = await indexer.EnsureFreshAsync(settings, cancellationToken).ConfigureAwait(false);
+                return StatusToolResult.From(search.Status(settings.RepositoryName), freshness);
             },
             cancellationToken);
 
@@ -146,6 +195,18 @@ public sealed class MeloreTools(
         => LifecycleText.TryParseScope(scope, out var resolved)
             ? resolved
             : throw new McpException("scope は " + LifecycleText.AllowedScopes + " のどれかを指定してください。");
+
+    /// <summary>
+    /// ツール引数の <c>id</c> を検証する。
+    /// </summary>
+    /// <exception cref="McpException">空白だけ、または <see cref="MaxIdLength"/> を超えるとき。</exception>
+    private static void ValidateId(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id) || id.Length > MaxIdLength)
+        {
+            throw new McpException("id は search の結果にある id を、" + MaxIdLength + " 文字以内で指定してください。");
+        }
+    }
 
     private async Task<T> InvokeAsync<T>(
         string tool,

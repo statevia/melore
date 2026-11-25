@@ -3,28 +3,28 @@
 | 項目 | 値 |
 | --- | --- |
 | 種別 | Guide |
-| Version | 0.2 |
-| 更新日 | 2026-11-10 |
+| Version | 0.3 |
+| 更新日 | 2026-11-23 |
 
-いま公開しているのは `search` / `references` / `trace` / `explain`。契約を壊さず足す候補。優先は **索引にあるのに MCP に出ていないもの**。エージェントの流れは `status` → `search`（snippet）→ `get`（必要な ID だけ）→ 関係の種別指定、が説明を増やすより方針に合う。
+いま公開しているのは `search` / `get` / `references` / `trace` / `explain` / `status`。契約を壊さず足す候補。優先は **索引にあるのに MCP に出ていないもの**。エージェントの流れは `status` → `search`（snippet）→ `get`（必要な ID だけ）→ 関係の種別指定、が説明を増やすより方針に合う。
 
 ## 1. 現行
 
 | ツール | 役割 |
 | --- | --- |
 | `search` | 横断検索。出典必須。既定は snippet |
+| `get` | `id` で 1 ヒット。既定は snippet、`includeBody=true` で本文（2026-11-23） |
 | `references` | まわりの文書・実装・テスト。`basis` 付き |
 | `trace` | 所属（`declares`）・基底型名（`inherits`）と、解決できた `calls` / `implements`。`calls` が索引に 1 件も無いときは limitation |
 | `explain` | 検索上位だけを根拠に説明 |
+| `status` | リビジョン・件数・ベクトルの有無と、作業ツリーとの差（2026-11-23） |
 
 ## 2. すぐ足せる（薄いラッパ）
 
-索引または CLI にすでにある。足す順は上から。`get` が無いと、snippet で足りないときにエージェントがファイルを読み直すので、grep から始めるのと手数が変わらない。`status` は CLI にあるが MCP に無い。
+索引にすでにある。足す順は上から。`get` と `status` は 2026-11-23 に足した（§1）。
 
 | 候補 | 入力（案） | 出すもの | なぜ |
 | --- | --- | --- | --- |
-| `get` | id、`includeBody` | 1 ヒット（snippet または本文） | `search` は短く、全文は ID 指定だけ |
-| `status` | （なし） | リビジョン、件数、embeddings の有無 | 古い索引で調べるのを止める |
 | `contradicts` | チャンクまたは型、limit | `contradicts` 関係だけ | 仕様と実装の食い違いを明示する要件 |
 | `specifies` | チャンクまたは型、limit | `specifies` 関係だけ | `references` から仕様↔型だけ取る |
 | `tested_by` | 型、limit | `tested_by` 関係だけ | 型↔テストだけ取る |
@@ -50,7 +50,7 @@
 
 | 候補 | 理由 |
 | --- | --- |
-| MCP からの `index` | 長い、DB ロック、stdio を汚すリスク。MCP の 4 ツールはどれも、差分が 32 件以内のとき、ツールを増やさずそのファイルだけ内部で再索引する |
+| MCP からの `index` | 長い、DB ロック、stdio を汚すリスク。MCP のツールはどれも、差分が 32 件以内のとき、ツールを増やさずそのファイルだけ内部で再索引する |
 | ファイル全文読み | IDE と重複。短い抜粋が既定という方針に逆行 |
 | `eval` | 人向け CLI のまま |
 
